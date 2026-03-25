@@ -11,8 +11,11 @@ let _s3SyncInstance: InstructionsS3Sync | null = null;
 function getDefaultS3Sync(): InstructionsS3Sync {
   if (!_s3SyncInstance) {
     const config = loadConfig();
-    const provider = config.storageProvider === "s3" ? createStorageProviderFromConfig(config) : null;
+    const isS3 = config.storageProvider === "s3";
+    console.log(`[instructions-s3-sync] storageProvider=${config.storageProvider}, s3Enabled=${isS3}, bucket=${config.storageS3Bucket}, endpoint=${config.storageS3Endpoint ?? "none"}`);
+    const provider = isS3 ? createStorageProviderFromConfig(config) : null;
     _s3SyncInstance = createInstructionsS3Sync(provider);
+    console.log(`[instructions-s3-sync] initialized: enabled=${_s3SyncInstance.enabled}`);
   }
   return _s3SyncInstance;
 }
