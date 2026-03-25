@@ -2,6 +2,20 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { notFound, unprocessable } from "../errors.js";
 import { resolveHomeAwarePath, resolvePaperclipInstanceRoot } from "../home-paths.js";
+import { createInstructionsS3Sync, type InstructionsS3Sync } from "./instructions-s3-sync.js";
+import { createStorageProviderFromConfig } from "../storage/provider-registry.js";
+import { loadConfig } from "../config.js";
+
+// Lazy singleton — created on first use
+let _s3SyncInstance: InstructionsS3Sync | null = null;
+function getDefaultS3Sync(): InstructionsS3Sync {
+  if (!_s3SyncInstance) {
+    const config = loadConfig();
+    const provider = config.storageProvider === "s3" ? createStorageProviderFromConfig(config) : null;
+    _s3SyncInstance = createInstructionsS3Sync(provider);
+  }
+  return _s3SyncInstance;
+}
 
 const ENTRY_FILE_DEFAULT = "AGENTS.md";
 const MODE_KEY = "instructionsBundleMode";
@@ -451,12 +465,27 @@ export function syncInstructionsBundleConfigFromFilePath(
   return applyBundleConfig(next, { mode, rootPath, entryFile });
 }
 
-export function agentInstructionsService() {
+export function agentInstructionsService(options?: { s3Sync?: InstructionsS3Sync }) {
+  const s3Sync = options?.s3Sync ?? getDefaultS3Sync();
+
   async function getBundle(agent: AgentLike): Promise<AgentInstructionsBundle> {
     const state = await recoverManagedBundleState(agent, deriveBundleState(agent));
     if (!state.rootPath) return toBundle(agent, state, []);
     const stat = await statIfExists(state.rootPath);
     if (!stat?.isDirectory()) {
+      // Try restoring from S3 if local files are missing
+      if (s3Sync?.enabled) {
+        const managedRoot = resolveManagedInstructionsRoot(agent);
+        const restored = await s3Sync.restoreFromS3(agent.companyId, agent.id, managedRoot);
+        if (restored) {
+          const restoredStat = await statIfExists(managedRoot);
+          if (restoredStat?.isDirectory()) {
+            const files = await listFilesRecursive(managedRoot);
+            const summaries = await Promise.all(files.map((rp) => readFileSummary(managedRoot, rp, state.entryFile)));
+            return toBundle(agent, { ...state, rootPath: managedRoot }, summaries);
+          }
+        }
+      }
       return toBundle(agent, {
         ...state,
         warnings: [...state.warnings, `Instructions root does not exist: ${state.rootPath}`],
@@ -624,6 +653,10 @@ export function agentInstructionsService() {
     const absolutePath = resolvePathWithinRoot(prepared.state.rootPath!, relativePath);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     await fs.writeFile(absolutePath, content, "utf8");
+    // Sync to S3
+    if (s3Sync?.enabled) {
+      await s3Sync.updateFileInS3(agent.companyId, agent.id, relativePath, content);
+    }
     const nextAgent = { ...agent, adapterConfig: prepared.adapterConfig };
     const [bundle, file] = await Promise.all([
       getBundle(nextAgent),
@@ -648,6 +681,10 @@ export function agentInstructionsService() {
     }
     const absolutePath = resolvePathWithinRoot(state.rootPath, normalizedPath);
     await fs.rm(absolutePath, { force: true });
+    // Sync deletion to S3
+    if (s3Sync?.enabled) {
+      await s3Sync.deleteFileInS3(agent.companyId, agent.id, normalizedPath);
+    }
     const adapterConfig = buildPersistedBundleConfig(derived, state);
     const bundle = await getBundle({ ...agent, adapterConfig });
     return { bundle, adapterConfig };
@@ -710,6 +747,16 @@ export function agentInstructionsService() {
     }
     if (!normalizedEntries.some(([relativePath]) => relativePath === entryFile)) {
       await fs.writeFile(resolvePathWithinRoot(rootPath, entryFile), "", "utf8");
+    }
+
+    // Sync all materialized files to S3
+    if (s3Sync?.enabled) {
+      const s3Files: Record<string, string> = {};
+      for (const [relativePath, content] of normalizedEntries) {
+        s3Files[relativePath] = content;
+      }
+      if (!s3Files[entryFile]) s3Files[entryFile] = "";
+      await s3Sync.saveFilesToS3(agent.companyId, agent.id, s3Files);
     }
 
     const adapterConfig = applyBundleConfig(asRecord(agent.adapterConfig), {
