@@ -99,10 +99,9 @@ function hasNonEmptyEnvValue(env: Record<string, string>, key: string): boolean 
 
 function resolveClaudeBillingType(env: Record<string, string>): "api" | "subscription" {
   // Claude uses API-key auth when ANTHROPIC_API_KEY is present,
-  // OAuth token auth when ANTHROPIC_AUTH_TOKEN is present,
+  // OAuth token auth when ANTHROPIC_AUTH_TOKEN / CLAUDE_CODE_OAUTH_TOKEN is present,
   // otherwise rely on local login/session auth.
   if (hasNonEmptyEnvValue(env, "ANTHROPIC_API_KEY")) return "api";
-  if (hasNonEmptyEnvValue(env, "ANTHROPIC_AUTH_TOKEN")) return "subscription";
   return "subscription";
 }
 
@@ -236,6 +235,18 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
 
   if (!hasExplicitApiKey && authToken) {
     env.PAPERCLIP_API_KEY = authToken;
+  }
+
+  // When ANTHROPIC_AUTH_TOKEN is set (OAuth), forward it as
+  // CLAUDE_CODE_OAUTH_TOKEN so the CLI handles OAuth natively —
+  // including the required beta header — without needing custom header injection.
+  // Strip ANTHROPIC_AUTH_TOKEN from the child env to prevent the SDK from
+  // using it directly as a raw Bearer token (which lacks the beta header).
+  const effectiveAuthToken =
+    env.ANTHROPIC_AUTH_TOKEN ?? process.env.ANTHROPIC_AUTH_TOKEN ?? "";
+  if (effectiveAuthToken.trim().length > 0 && !env.CLAUDE_CODE_OAUTH_TOKEN) {
+    env.CLAUDE_CODE_OAUTH_TOKEN = effectiveAuthToken.trim();
+    env.ANTHROPIC_AUTH_TOKEN = "";
   }
 
   const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
