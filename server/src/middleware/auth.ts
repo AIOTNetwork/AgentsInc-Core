@@ -82,6 +82,21 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
       return;
     }
 
+    // Instance API secret — env-based service token for dashboards/visualizations
+    // Grants instance-admin access to all companies without a user account
+    const instanceSecret = process.env.PAPERCLIP_INSTANCE_API_SECRET;
+    if (instanceSecret && token === instanceSecret) {
+      req.actor = {
+        type: "board",
+        userId: "instance-api",
+        isInstanceAdmin: true,
+        runId: runIdHeader ?? undefined,
+        source: "instance_key",
+      };
+      next();
+      return;
+    }
+
     const boardKey = await boardAuth.findBoardApiKeyByToken(token);
     if (boardKey) {
       const access = await boardAuth.resolveBoardAccess(boardKey.userId);
