@@ -61,7 +61,16 @@ export function Companies() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => companiesApi.remove(id),
-    onSuccess: () => {
+    onSuccess: (_data, deletedId) => {
+      // If the deleted company was selected, switch to another one
+      if (selectedCompanyId === deletedId) {
+        const remaining = companies.filter(c => c.id !== deletedId);
+        if (remaining.length > 0) {
+          setSelectedCompanyId(remaining[0].id);
+        } else {
+          localStorage.removeItem("paperclip.selectedCompanyId");
+        }
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.stats });
       setConfirmDeleteId(null);
