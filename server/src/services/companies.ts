@@ -268,7 +268,7 @@ export function companyService(db: Db) {
           'issue_work_products',
           'workspace_runtime_services',
           'execution_workspaces',
-          'routine_executions',
+          'routine_runs',
           'routine_triggers',
           'routines',
           'budget_incidents',
