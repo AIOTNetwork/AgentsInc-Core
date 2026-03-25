@@ -307,8 +307,8 @@ export function companyService(db: Db) {
           ['company_logos', 'company_id'],
           ['assets', 'company_id'],
           ['labels', 'company_id'],
-          ['goals', 'company_id'],
           ['projects', 'company_id'],
+          ['goals', 'company_id'],
           ['agents', 'company_id'],
           ['companies', 'id'],
         ];
