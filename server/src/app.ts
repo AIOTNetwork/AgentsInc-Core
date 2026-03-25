@@ -78,6 +78,37 @@ export async function createApp(
 ) {
   const app = express();
 
+  // CORS — configured via CORS_ALLOWED_ORIGINS env var
+  // Format: comma-separated origins, e.g. "https://office.example.com,https://*.example.io"
+  // Wildcard subdomain patterns supported (e.g. "https://*.aiotnetwork.io")
+  // Localhost is always allowed in non-production
+  const corsOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      const isAllowed = isLocalhost || corsOrigins.some(pattern => {
+        if (pattern.includes('*')) {
+          // Convert wildcard pattern to regex: https://*.example.io → https://.*\.example\.io
+          const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+          return regex.test(origin);
+        }
+        return origin === pattern;
+      });
+      if (isAllowed) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Paperclip-Run-ID');
+      }
+    }
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+
   app.use(express.json({
     // Company import/export payloads can inline full portable packages.
     limit: "10mb",
