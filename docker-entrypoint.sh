@@ -3,7 +3,7 @@
 if [ "$(id -u)" = "0" ]; then
   # Ensure /paperclip is owned by node
   chown -R node:node /paperclip 2>/dev/null || true
-  exec su-exec node "$@"
+  exec gosu node "$@"
 fi
 
 # Already running as non-root, just exec
