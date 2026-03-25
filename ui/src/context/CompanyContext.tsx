@@ -59,20 +59,30 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     [companies],
   );
 
-  // Auto-select first company when list loads
+  // Auto-select first company when list loads (only if no valid selection exists)
   useEffect(() => {
     if (companies.length === 0) return;
 
     const selectableCompanies = sidebarCompanies.length > 0 ? sidebarCompanies : companies;
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && selectableCompanies.some((c) => c.id === stored)) return;
+    // Don't re-select if current selection is already valid
     if (selectedCompanyId && selectableCompanies.some((c) => c.id === selectedCompanyId)) return;
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored && selectableCompanies.some((c) => c.id === stored)) {
+      // Restore from localStorage without triggering another cycle
+      if (stored !== selectedCompanyId) {
+        setSelectedCompanyIdState(stored);
+        setSelectionSource("bootstrap");
+      }
+      return;
+    }
 
     const next = selectableCompanies[0]!.id;
-    setSelectedCompanyIdState(next);
-    setSelectionSource("bootstrap");
-    localStorage.setItem(STORAGE_KEY, next);
-  }, [companies, selectedCompanyId, sidebarCompanies]);
+    if (next !== selectedCompanyId) {
+      setSelectedCompanyIdState(next);
+      setSelectionSource("bootstrap");
+      localStorage.setItem(STORAGE_KEY, next);
+    }
+  }, [companies, sidebarCompanies]); // removed selectedCompanyId from deps to break the loop
 
   const setSelectedCompanyId = useCallback((companyId: string, options?: CompanySelectionOptions) => {
     setSelectedCompanyIdState(companyId);
