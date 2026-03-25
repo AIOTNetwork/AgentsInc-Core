@@ -2,6 +2,7 @@
 # Startup diagnostics
 echo "[entrypoint] Running as: $(whoami) (UID $(id -u))"
 echo "[entrypoint] ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:+set (${#ANTHROPIC_API_KEY} chars)}${ANTHROPIC_API_KEY:-NOT SET}"
+echo "[entrypoint] CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:+set (${#CLAUDE_CODE_OAUTH_TOKEN} chars)}${CLAUDE_CODE_OAUTH_TOKEN:-NOT SET}"
 echo "[entrypoint] ANTHROPIC_AUTH_TOKEN: ${ANTHROPIC_AUTH_TOKEN:+set (${#ANTHROPIC_AUTH_TOKEN} chars)}${ANTHROPIC_AUTH_TOKEN:-NOT SET}"
 echo "[entrypoint] PAPERCLIP_DEPLOYMENT_MODE: ${PAPERCLIP_DEPLOYMENT_MODE:-not set}"
 
