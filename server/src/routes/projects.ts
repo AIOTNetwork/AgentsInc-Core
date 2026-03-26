@@ -448,8 +448,13 @@ export function projectRoutes(db: Db) {
     try {
       const result = await createWorkspaceSnapshot(project);
       res.json(result);
-    } catch {
-      res.status(404).json({ error: "workspace_not_found", message: "Workspace directory not found on server" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Workspace directory not found on server";
+      const isNotFound = message.includes("not found") || message.includes("not a directory");
+      res.status(isNotFound ? 404 : 422).json({
+        error: isNotFound ? "workspace_not_found" : "snapshot_failed",
+        message,
+      });
     }
   });
 
