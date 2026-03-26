@@ -34,6 +34,7 @@ export interface StorageProvider {
   getObject(input: GetObjectInput): Promise<GetObjectResult>;
   headObject(input: GetObjectInput): Promise<HeadObjectResult>;
   deleteObject(input: GetObjectInput): Promise<void>;
+  getSignedUrl?(input: GetObjectInput, expiresInSeconds: number): Promise<string>;
 }
 
 export interface PutFileInput {
@@ -59,4 +60,5 @@ export interface StorageService {
   getObject(companyId: string, objectKey: string): Promise<GetObjectResult>;
   headObject(companyId: string, objectKey: string): Promise<HeadObjectResult>;
   deleteObject(companyId: string, objectKey: string): Promise<void>;
+  getSignedUrl?(companyId: string, objectKey: string, expiresInSeconds: number): Promise<string>;
 }

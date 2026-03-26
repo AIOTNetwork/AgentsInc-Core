@@ -5,6 +5,7 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl as awsGetSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "node:stream";
 import type { StorageProvider, GetObjectResult, HeadObjectResult } from "./types.js";
 import { notFound, unprocessable } from "../errors.js";
@@ -148,6 +149,13 @@ export function createS3StorageProvider(config: S3ProviderConfig): StorageProvid
           Key: key,
         }),
       );
+    },
+
+    async getSignedUrl(input, expiresInSeconds): Promise<string> {
+      const key = buildKey(prefix, input.objectKey);
+      const command = new GetObjectCommand({ Bucket: bucket, Key: key });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return awsGetSignedUrl(client as any, command as any, { expiresIn: expiresInSeconds });
     },
   };
 }

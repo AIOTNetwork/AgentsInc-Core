@@ -127,5 +127,17 @@ export function createStorageService(provider: StorageProvider): StorageService 
       ensureCompanyPrefix(companyId, objectKey);
       await provider.deleteObject({ objectKey });
     },
+
+    ...(provider.getSignedUrl
+      ? {
+          async getSignedUrl(companyId: string, objectKey: string, expiresInSeconds: number) {
+            ensureCompanyPrefix(companyId, objectKey);
+            return provider.getSignedUrl!(
+              { objectKey },
+              expiresInSeconds,
+            );
+          },
+        }
+      : {}),
   };
 }
