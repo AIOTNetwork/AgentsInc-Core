@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { loadAgencyBundle } from "./agency-catalog.js";
 
 const DEFAULT_AGENT_BUNDLE_FILES = {
   default: ["AGENTS.md"],
@@ -24,4 +25,17 @@ export async function loadDefaultAgentInstructionsBundle(role: DefaultAgentBundl
 
 export function resolveDefaultAgentInstructionsBundleRole(role: string): DefaultAgentBundleRole {
   return role === "ceo" ? "ceo" : "default";
+}
+
+/**
+ * Load an instructions bundle from the agency catalog by bundlePath.
+ * Falls back to the default bundle for the role if the catalog path is not found.
+ */
+export async function loadAgentInstructionsFromCatalog(
+  bundlePath: string,
+  fallbackRole: string,
+): Promise<Record<string, string>> {
+  const bundle = await loadAgencyBundle(bundlePath);
+  if (bundle) return bundle;
+  return loadDefaultAgentInstructionsBundle(resolveDefaultAgentInstructionsBundleRole(fallbackRole));
 }
