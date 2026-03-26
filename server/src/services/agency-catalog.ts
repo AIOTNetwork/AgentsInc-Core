@@ -20,19 +20,35 @@ export interface ParsedAgencyAgent {
 }
 
 const ONBOARDING_DIR = new URL("../onboarding-assets", import.meta.url);
-const AGENCY_DIR = new URL("../onboarding-assets/agency", import.meta.url);
+
+// All catalog sources — add new directories here to register more catalogs
+const CATALOG_SOURCES = [
+  "agency-agents",
+  "aiot-agents",
+] as const;
 
 let catalogCache: AgencyCatalogEntry[] | null = null;
 
 /**
- * Load the catalog.json from the agency onboarding assets.
+ * Load and merge catalog.json from all onboarding asset sources.
  */
 export async function getAgencyCatalog(): Promise<AgencyCatalogEntry[]> {
   if (catalogCache) return catalogCache;
 
-  const catalogPath = new URL("catalog.json", AGENCY_DIR + "/");
-  const raw = await fs.readFile(catalogPath, "utf8");
-  catalogCache = JSON.parse(raw) as AgencyCatalogEntry[];
+  const allEntries: AgencyCatalogEntry[] = [];
+  for (const source of CATALOG_SOURCES) {
+    const catalogPath = new URL(`${source}/catalog.json`, ONBOARDING_DIR + "/");
+    try {
+      const raw = await fs.readFile(catalogPath, "utf8");
+      const entries = JSON.parse(raw) as AgencyCatalogEntry[];
+      allEntries.push(...entries);
+    } catch {
+      // Source catalog not found — skip
+    }
+  }
+
+  allEntries.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  catalogCache = allEntries;
   return catalogCache;
 }
 

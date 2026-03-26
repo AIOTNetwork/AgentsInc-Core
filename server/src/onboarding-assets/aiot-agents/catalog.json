@@ -1,0 +1,161 @@
+[
+  {
+    "path": "aiot-agents/trading/crypto-day-trader/SOURCE.md",
+    "source": "aiot-agents",
+    "category": "trading",
+    "name": "Crypto Day Trader",
+    "defaultRole": "trader",
+    "description": "Fast-execution crypto day trader specializing in short-timeframe momentum plays (1m-4h), funding rate edge capture, scalping setups, and liquidation cascade detection with strict intraday risk management.",
+    "bundlePath": "aiot-agents/trading/crypto-day-trader",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md",
+      "TOOLS.md"
+    ],
+    "desiredSkills": [
+      "market-forecast",
+      "futures-microstructure",
+      "funding-settlement"
+    ]
+  },
+  {
+    "path": "aiot-agents/trading/crypto-market-analyst/SOURCE.md",
+    "source": "aiot-agents",
+    "category": "trading",
+    "name": "Crypto Market Analyst",
+    "defaultRole": "trader",
+    "description": "Quantitative crypto market analyst specializing in multi-timeframe technical analysis, on-chain data interpretation, futures microstructure, and systematic trade signal generation using the SOP v8.1 framework.",
+    "bundlePath": "aiot-agents/trading/crypto-market-analyst",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md",
+      "TOOLS.md"
+    ],
+    "desiredSkills": [
+      "market-forecast",
+      "futures-microstructure",
+      "orderbook-analysis",
+      "smart-money-analysis",
+      "funding-settlement",
+      "prediction-journal"
+    ]
+  },
+  {
+    "path": "aiot-agents/trading/crypto-market-maker/SOURCE.md",
+    "source": "aiot-agents",
+    "category": "trading",
+    "name": "Crypto Market Maker",
+    "defaultRole": "trader",
+    "description": "Automated market maker specializing in bid-ask spread management, inventory risk control, adverse selection detection, and fill rate optimization across crypto perpetual futures and spot markets.",
+    "bundlePath": "aiot-agents/trading/crypto-market-maker",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md",
+      "TOOLS.md"
+    ],
+    "desiredSkills": [
+      "orderbook-analysis",
+      "futures-microstructure",
+      "funding-settlement"
+    ]
+  },
+  {
+    "path": "aiot-agents/trading/crypto-risk-manager/SOURCE.md",
+    "source": "aiot-agents",
+    "category": "trading",
+    "name": "Crypto Risk Manager",
+    "defaultRole": "trader",
+    "description": "Portfolio risk monitoring specialist responsible for position sizing, drawdown management, regime-adaptive limits, correlation analysis, and ensuring the trading operation survives tail events.",
+    "bundlePath": "aiot-agents/trading/crypto-risk-manager",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md",
+      "TOOLS.md"
+    ],
+    "desiredSkills": [
+      "market-forecast",
+      "prediction-journal",
+      "smart-money-analysis"
+    ]
+  },
+  {
+    "path": "aiot-agents/trading/crypto-swing-trader/SOURCE.md",
+    "source": "aiot-agents",
+    "category": "trading",
+    "name": "Crypto Swing Trader",
+    "defaultRole": "trader",
+    "description": "Multi-day crypto position trader specializing in 4h-1W timeframe trend-following, institutional flow alignment, and systematic scale-in/scale-out strategies using smart money analysis and prediction journaling.",
+    "bundlePath": "aiot-agents/trading/crypto-swing-trader",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md",
+      "TOOLS.md"
+    ],
+    "desiredSkills": [
+      "market-forecast",
+      "smart-money-analysis",
+      "prediction-journal"
+    ]
+  },
+  {
+    "path": "aiot-agents/trading/funding-rate-arbitrageur/SOURCE.md",
+    "source": "aiot-agents",
+    "category": "trading",
+    "name": "Funding Rate Arbitrageur",
+    "defaultRole": "trader",
+    "description": "Specialist trader focused on perpetual futures funding rate settlement edge, basis trades, and cash-and-carry arbitrage strategies that extract consistent returns from market microstructure inefficiencies.",
+    "bundlePath": "aiot-agents/trading/funding-rate-arbitrageur",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md",
+      "TOOLS.md"
+    ],
+    "desiredSkills": [
+      "funding-settlement",
+      "futures-microstructure"
+    ]
+  },
+  {
+    "path": "aiot-agents/trading/onchain-researcher/SOURCE.md",
+    "source": "aiot-agents",
+    "category": "trading",
+    "name": "On-Chain Researcher",
+    "defaultRole": "researcher",
+    "description": "Research-focused on-chain analyst specializing in whale wallet tracking, exchange flow analysis, smart money profiling, and alpha signal discovery — produces research reports, not trade signals.",
+    "bundlePath": "aiot-agents/trading/onchain-researcher",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md",
+      "TOOLS.md"
+    ],
+    "desiredSkills": [
+      "smart-money-analysis",
+      "orderbook-analysis"
+    ]
+  },
+  {
+    "path": "aiot-agents/trading/trade-signal-auditor/SOURCE.md",
+    "source": "aiot-agents",
+    "category": "trading",
+    "name": "Trade Signal Auditor",
+    "defaultRole": "qa",
+    "description": "Quality assurance specialist that audits prediction accuracy, detects systematic cognitive biases, ranks signal reliability, and maintains forecast calibration across all trading agents — does not trade.",
+    "bundlePath": "aiot-agents/trading/trade-signal-auditor",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md",
+      "TOOLS.md"
+    ],
+    "desiredSkills": [
+      "prediction-journal"
+    ]
+  }
+]
