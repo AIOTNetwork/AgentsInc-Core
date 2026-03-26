@@ -68,6 +68,7 @@ import { ensureOpenCodeModelConfiguredAndAvailable } from "@paperclipai/adapter-
 import {
   loadDefaultAgentInstructionsBundle,
   resolveDefaultAgentInstructionsBundleRole,
+  resolveAgentInstructionsForHire,
 } from "../services/default-agent-instructions.js";
 import { getTelemetryClient } from "../telemetry.js";
 
@@ -561,9 +562,12 @@ export function agentRoutes(db: Db) {
     const promptTemplate = typeof adapterConfig.promptTemplate === "string"
       ? adapterConfig.promptTemplate
       : "";
-    const files = promptTemplate.trim().length === 0
-      ? await loadDefaultAgentInstructionsBundle(resolveDefaultAgentInstructionsBundleRole(agent.role))
-      : { "AGENTS.md": promptTemplate };
+    const catalogPath = typeof adapterConfig.catalogPath === "string"
+      ? adapterConfig.catalogPath
+      : null;
+    const files = promptTemplate.trim().length > 0
+      ? { "AGENTS.md": promptTemplate }
+      : await resolveAgentInstructionsForHire(agent.role, agent.name, catalogPath);
     const materialized = await instructions.materializeManagedBundle(
       agent,
       files,
