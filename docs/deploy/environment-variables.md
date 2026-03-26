@@ -41,6 +41,7 @@ These are set automatically by the server when invoking agents:
 | `PAPERCLIP_APPROVAL_ID` | Resolved approval ID |
 | `PAPERCLIP_APPROVAL_STATUS` | Approval decision |
 | `PAPERCLIP_LINKED_ISSUE_IDS` | Comma-separated linked issue IDs |
+| `AGENTSINC_TOOLS_URL` | AgentsIncTools API URL (for preview, browser, and future tools) |
 
 ## LLM Provider Keys (for adapters)
 
