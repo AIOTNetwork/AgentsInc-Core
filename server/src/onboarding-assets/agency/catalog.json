@@ -1129,19 +1129,6 @@
     ]
   },
   {
-    "path": "agency/paid-media/paid-media-auditor/SOURCE.md",
-    "source": "agency-agents",
-    "category": "paid-media",
-    "name": "Paid Media Auditor",
-    "defaultRole": "marketer",
-    "description": "Comprehensive paid media auditor who systematically evaluates Google Ads, Microsoft Ads, and Meta accounts across 200+ checkpoints spanning account structure, tracking, bidding, creative, audiences, and competitive positioning. Produces actionable audit reports with prioritized recommendations and p",
-    "bundlePath": "agency/paid-media/paid-media-auditor",
-    "bundleFiles": [
-      "AGENTS.md",
-      "SOUL.md"
-    ]
-  },
-  {
     "path": "agency/paid-media/paid-media-creative-strategist/SOURCE.md",
     "source": "agency-agents",
     "category": "paid-media",
@@ -1149,6 +1136,19 @@
     "defaultRole": "marketer",
     "description": "Paid media creative specialist focused on ad copywriting, RSA optimization, asset group design, and creative testing frameworks across Google, Meta, Microsoft, and programmatic platforms. Bridges the gap between performance data and persuasive messaging.",
     "bundlePath": "agency/paid-media/paid-media-creative-strategist",
+    "bundleFiles": [
+      "AGENTS.md",
+      "SOUL.md"
+    ]
+  },
+  {
+    "path": "agency/paid-media/paid-media-auditor/SOURCE.md",
+    "source": "agency-agents",
+    "category": "paid-media",
+    "name": "Paid Media Auditor",
+    "defaultRole": "marketer",
+    "description": "Comprehensive paid media auditor who systematically evaluates Google Ads, Microsoft Ads, and Meta accounts across 200+ checkpoints spanning account structure, tracking, bidding, creative, audiences, and competitive positioning. Produces actionable audit reports with prioritized recommendations and p",
+    "bundlePath": "agency/paid-media/paid-media-auditor",
     "bundleFiles": [
       "AGENTS.md",
       "SOUL.md"
@@ -1328,6 +1328,19 @@
     ]
   },
   {
+    "path": "agency/project-management/project-manager-senior/SOURCE.md",
+    "source": "agency-agents",
+    "category": "project-management",
+    "name": "Senior Project Manager",
+    "defaultRole": "pm",
+    "description": "Converts specs to tasks and remembers previous projects. Focused on realistic scope, no background processes, exact spec requirements",
+    "bundlePath": "agency/project-management/project-manager-senior",
+    "bundleFiles": [
+      "AGENTS.md",
+      "SOUL.md"
+    ]
+  },
+  {
     "path": "agency/project-management/project-management-studio-operations/SOURCE.md",
     "source": "agency-agents",
     "category": "project-management",
@@ -1356,19 +1369,6 @@
     ]
   },
   {
-    "path": "agency/project-management/project-manager-senior/SOURCE.md",
-    "source": "agency-agents",
-    "category": "project-management",
-    "name": "Senior Project Manager",
-    "defaultRole": "pm",
-    "description": "Converts specs to tasks and remembers previous projects. Focused on realistic scope, no background processes, exact spec requirements",
-    "bundlePath": "agency/project-management/project-manager-senior",
-    "bundleFiles": [
-      "AGENTS.md",
-      "SOUL.md"
-    ]
-  },
-  {
     "path": "agency/sales/sales-account-strategist/SOURCE.md",
     "source": "agency-agents",
     "category": "sales",
@@ -1376,19 +1376,6 @@
     "defaultRole": "sales",
     "description": "Expert post-sale account strategist specializing in land-and-expand execution, stakeholder mapping, QBR facilitation, and net revenue retention. Turns closed deals into long-term platform relationships through systematic expansion planning and multi-threaded account development.",
     "bundlePath": "agency/sales/sales-account-strategist",
-    "bundleFiles": [
-      "AGENTS.md",
-      "SOUL.md"
-    ]
-  },
-  {
-    "path": "agency/sales/sales-coach/SOURCE.md",
-    "source": "agency-agents",
-    "category": "sales",
-    "name": "Sales Coach",
-    "defaultRole": "sales",
-    "description": "Expert sales coaching specialist focused on rep development, pipeline review facilitation, call coaching, deal strategy, and forecast accuracy. Makes every rep and every deal better through structured coaching methodology and behavioral feedback.",
-    "bundlePath": "agency/sales/sales-coach",
     "bundleFiles": [
       "AGENTS.md",
       "SOUL.md"
@@ -1415,19 +1402,6 @@
     "defaultRole": "sales",
     "description": "Coaches sales teams on elite discovery methodology — question design, current-state mapping, gap quantification, and call structure that surfaces real buying motivation.",
     "bundlePath": "agency/sales/sales-discovery-coach",
-    "bundleFiles": [
-      "AGENTS.md",
-      "SOUL.md"
-    ]
-  },
-  {
-    "path": "agency/sales/sales-engineer/SOURCE.md",
-    "source": "agency-agents",
-    "category": "sales",
-    "name": "Sales Engineer",
-    "defaultRole": "sales",
-    "description": "Senior pre-sales engineer specializing in technical discovery, demo engineering, POC scoping, competitive battlecards, and bridging product capabilities to business outcomes. Wins the technical decision so the deal can close.",
-    "bundlePath": "agency/sales/sales-engineer",
     "bundleFiles": [
       "AGENTS.md",
       "SOUL.md"
@@ -1467,6 +1441,32 @@
     "defaultRole": "sales",
     "description": "Strategic proposal architect who transforms RFPs and sales opportunities into compelling win narratives. Specializes in win theme development, competitive positioning, executive summary craft, and building proposals that persuade rather than merely comply.",
     "bundlePath": "agency/sales/sales-proposal-strategist",
+    "bundleFiles": [
+      "AGENTS.md",
+      "SOUL.md"
+    ]
+  },
+  {
+    "path": "agency/sales/sales-coach/SOURCE.md",
+    "source": "agency-agents",
+    "category": "sales",
+    "name": "Sales Coach",
+    "defaultRole": "sales",
+    "description": "Expert sales coaching specialist focused on rep development, pipeline review facilitation, call coaching, deal strategy, and forecast accuracy. Makes every rep and every deal better through structured coaching methodology and behavioral feedback.",
+    "bundlePath": "agency/sales/sales-coach",
+    "bundleFiles": [
+      "AGENTS.md",
+      "SOUL.md"
+    ]
+  },
+  {
+    "path": "agency/sales/sales-engineer/SOURCE.md",
+    "source": "agency-agents",
+    "category": "sales",
+    "name": "Sales Engineer",
+    "defaultRole": "sales",
+    "description": "Senior pre-sales engineer specializing in technical discovery, demo engineering, POC scoping, competitive battlecards, and bridging product capabilities to business outcomes. Wins the technical decision so the deal can close.",
+    "bundlePath": "agency/sales/sales-engineer",
     "bundleFiles": [
       "AGENTS.md",
       "SOUL.md"
@@ -1646,6 +1646,20 @@
     ]
   },
   {
+    "path": "agency/specialized/specialized-cultural-intelligence-strategist/SOURCE.md",
+    "source": "agency-agents",
+    "category": "specialized",
+    "name": "Cultural Intelligence Strategist",
+    "defaultRole": "general",
+    "description": "CQ specialist that detects invisible exclusion, researches global context, and ensures software resonates authentically across intersectional identities.",
+    "bundlePath": "agency/specialized/specialized-cultural-intelligence-strategist",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ]
+  },
+  {
     "path": "agency/specialized/data-consolidation-agent/SOURCE.md",
     "source": "agency-agents",
     "category": "specialized",
@@ -1653,6 +1667,46 @@
     "defaultRole": "general",
     "description": "AI agent that consolidates extracted sales data into live reporting dashboards with territory, rep, and pipeline summaries",
     "bundlePath": "agency/specialized/data-consolidation-agent",
+    "bundleFiles": [
+      "AGENTS.md",
+      "SOUL.md"
+    ]
+  },
+  {
+    "path": "agency/specialized/specialized-developer-advocate/SOURCE.md",
+    "source": "agency-agents",
+    "category": "specialized",
+    "name": "Developer Advocate",
+    "defaultRole": "marketer",
+    "description": "Expert developer advocate specializing in building developer communities, creating compelling technical content, optimizing developer experience (DX), and driving platform adoption through authentic engineering engagement. Bridges product and engineering teams with external developers.",
+    "bundlePath": "agency/specialized/specialized-developer-advocate",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ]
+  },
+  {
+    "path": "agency/specialized/specialized-document-generator/SOURCE.md",
+    "source": "agency-agents",
+    "category": "specialized",
+    "name": "Document Generator",
+    "defaultRole": "writer",
+    "description": "Expert document creation specialist who generates professional PDF, PPTX, DOCX, and XLSX files using code-based approaches with proper formatting, charts, and data visualization.",
+    "bundlePath": "agency/specialized/specialized-document-generator",
+    "bundleFiles": [
+      "AGENTS.md",
+      "SOUL.md"
+    ]
+  },
+  {
+    "path": "agency/specialized/specialized-french-consulting-market/SOURCE.md",
+    "source": "agency-agents",
+    "category": "specialized",
+    "name": "French Consulting Market Navigator",
+    "defaultRole": "general",
+    "description": "Navigate the French ESN/SI freelance ecosystem — margin models, platform mechanics (Malt, collective.work), portage salarial, rate positioning, and payment cycle realities",
+    "bundlePath": "agency/specialized/specialized-french-consulting-market",
     "bundleFiles": [
       "AGENTS.md",
       "SOUL.md"
@@ -1699,6 +1753,19 @@
     ]
   },
   {
+    "path": "agency/specialized/specialized-korean-business-navigator/SOURCE.md",
+    "source": "agency-agents",
+    "category": "specialized",
+    "name": "Korean Business Navigator",
+    "defaultRole": "general",
+    "description": "Korean business culture for foreign professionals — 품의 decision process, nunchi reading, KakaoTalk business etiquette, hierarchy navigation, and relationship-first deal mechanics",
+    "bundlePath": "agency/specialized/specialized-korean-business-navigator",
+    "bundleFiles": [
+      "AGENTS.md",
+      "SOUL.md"
+    ]
+  },
+  {
     "path": "agency/specialized/lsp-index-engineer/SOURCE.md",
     "source": "agency-agents",
     "category": "specialized",
@@ -1706,6 +1773,33 @@
     "defaultRole": "engineer",
     "description": "Language Server Protocol specialist building unified code intelligence systems through LSP client orchestration and semantic indexing",
     "bundlePath": "agency/specialized/lsp-index-engineer",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ]
+  },
+  {
+    "path": "agency/specialized/specialized-mcp-builder/SOURCE.md",
+    "source": "agency-agents",
+    "category": "specialized",
+    "name": "MCP Builder",
+    "defaultRole": "engineer",
+    "description": "Expert Model Context Protocol developer who designs, builds, and tests MCP servers that extend AI agent capabilities with custom tools, resources, and prompts.",
+    "bundlePath": "agency/specialized/specialized-mcp-builder",
+    "bundleFiles": [
+      "AGENTS.md",
+      "SOUL.md"
+    ]
+  },
+  {
+    "path": "agency/specialized/specialized-model-qa/SOURCE.md",
+    "source": "agency-agents",
+    "category": "specialized",
+    "name": "Model QA Specialist",
+    "defaultRole": "qa",
+    "description": "Independent model QA expert who audits ML and statistical models end-to-end - from documentation review and data reconstruction to replication, calibration testing, interpretability analysis, performance monitoring, and audit-grade reporting.",
+    "bundlePath": "agency/specialized/specialized-model-qa",
     "bundleFiles": [
       "AGENTS.md",
       "HEARTBEAT.md",
@@ -1752,100 +1846,6 @@
     ]
   },
   {
-    "path": "agency/specialized/specialized-cultural-intelligence-strategist/SOURCE.md",
-    "source": "agency-agents",
-    "category": "specialized",
-    "name": "Cultural Intelligence Strategist",
-    "defaultRole": "general",
-    "description": "CQ specialist that detects invisible exclusion, researches global context, and ensures software resonates authentically across intersectional identities.",
-    "bundlePath": "agency/specialized/specialized-cultural-intelligence-strategist",
-    "bundleFiles": [
-      "AGENTS.md",
-      "HEARTBEAT.md",
-      "SOUL.md"
-    ]
-  },
-  {
-    "path": "agency/specialized/specialized-developer-advocate/SOURCE.md",
-    "source": "agency-agents",
-    "category": "specialized",
-    "name": "Developer Advocate",
-    "defaultRole": "marketer",
-    "description": "Expert developer advocate specializing in building developer communities, creating compelling technical content, optimizing developer experience (DX), and driving platform adoption through authentic engineering engagement. Bridges product and engineering teams with external developers.",
-    "bundlePath": "agency/specialized/specialized-developer-advocate",
-    "bundleFiles": [
-      "AGENTS.md",
-      "HEARTBEAT.md",
-      "SOUL.md"
-    ]
-  },
-  {
-    "path": "agency/specialized/specialized-document-generator/SOURCE.md",
-    "source": "agency-agents",
-    "category": "specialized",
-    "name": "Document Generator",
-    "defaultRole": "writer",
-    "description": "Expert document creation specialist who generates professional PDF, PPTX, DOCX, and XLSX files using code-based approaches with proper formatting, charts, and data visualization.",
-    "bundlePath": "agency/specialized/specialized-document-generator",
-    "bundleFiles": [
-      "AGENTS.md",
-      "SOUL.md"
-    ]
-  },
-  {
-    "path": "agency/specialized/specialized-french-consulting-market/SOURCE.md",
-    "source": "agency-agents",
-    "category": "specialized",
-    "name": "French Consulting Market Navigator",
-    "defaultRole": "general",
-    "description": "Navigate the French ESN/SI freelance ecosystem — margin models, platform mechanics (Malt, collective.work), portage salarial, rate positioning, and payment cycle realities",
-    "bundlePath": "agency/specialized/specialized-french-consulting-market",
-    "bundleFiles": [
-      "AGENTS.md",
-      "SOUL.md"
-    ]
-  },
-  {
-    "path": "agency/specialized/specialized-korean-business-navigator/SOURCE.md",
-    "source": "agency-agents",
-    "category": "specialized",
-    "name": "Korean Business Navigator",
-    "defaultRole": "general",
-    "description": "Korean business culture for foreign professionals — 품의 decision process, nunchi reading, KakaoTalk business etiquette, hierarchy navigation, and relationship-first deal mechanics",
-    "bundlePath": "agency/specialized/specialized-korean-business-navigator",
-    "bundleFiles": [
-      "AGENTS.md",
-      "SOUL.md"
-    ]
-  },
-  {
-    "path": "agency/specialized/specialized-mcp-builder/SOURCE.md",
-    "source": "agency-agents",
-    "category": "specialized",
-    "name": "MCP Builder",
-    "defaultRole": "engineer",
-    "description": "Expert Model Context Protocol developer who designs, builds, and tests MCP servers that extend AI agent capabilities with custom tools, resources, and prompts.",
-    "bundlePath": "agency/specialized/specialized-mcp-builder",
-    "bundleFiles": [
-      "AGENTS.md",
-      "SOUL.md"
-    ]
-  },
-  {
-    "path": "agency/specialized/specialized-model-qa/SOURCE.md",
-    "source": "agency-agents",
-    "category": "specialized",
-    "name": "Model QA Specialist",
-    "defaultRole": "qa",
-    "description": "Independent model QA expert who audits ML and statistical models end-to-end - from documentation review and data reconstruction to replication, calibration testing, interpretability analysis, performance monitoring, and audit-grade reporting.",
-    "bundlePath": "agency/specialized/specialized-model-qa",
-    "bundleFiles": [
-      "AGENTS.md",
-      "HEARTBEAT.md",
-      "SOUL.md"
-    ]
-  },
-  {
     "path": "agency/specialized/specialized-salesforce-architect/SOURCE.md",
     "source": "agency-agents",
     "category": "specialized",
@@ -1853,19 +1853,6 @@
     "defaultRole": "general",
     "description": "Solution architecture for Salesforce platform — multi-cloud design, integration patterns, governor limits, deployment strategy, and data model governance for enterprise-scale orgs",
     "bundlePath": "agency/specialized/specialized-salesforce-architect",
-    "bundleFiles": [
-      "AGENTS.md",
-      "SOUL.md"
-    ]
-  },
-  {
-    "path": "agency/specialized/specialized-workflow-architect/SOURCE.md",
-    "source": "agency-agents",
-    "category": "specialized",
-    "name": "Workflow Architect",
-    "defaultRole": "pm",
-    "description": "Workflow design specialist who maps complete workflow trees for every system, user journey, and agent interaction — covering happy paths, all branch conditions, failure modes, recovery paths, handoff contracts, and observable states to produce build-ready specs that agents can implement against and ",
-    "bundlePath": "agency/specialized/specialized-workflow-architect",
     "bundleFiles": [
       "AGENTS.md",
       "SOUL.md"
@@ -1892,6 +1879,19 @@
     "defaultRole": "general",
     "description": "Expert supply chain management and procurement strategy specialist — skilled in supplier development, strategic sourcing, quality control, and supply chain digitalization. Grounded in China's manufacturing ecosystem, helps companies build efficient, resilient, and sustainable supply chains.",
     "bundlePath": "agency/specialized/supply-chain-strategist",
+    "bundleFiles": [
+      "AGENTS.md",
+      "SOUL.md"
+    ]
+  },
+  {
+    "path": "agency/specialized/specialized-workflow-architect/SOURCE.md",
+    "source": "agency-agents",
+    "category": "specialized",
+    "name": "Workflow Architect",
+    "defaultRole": "pm",
+    "description": "Workflow design specialist who maps complete workflow trees for every system, user journey, and agent interaction — covering happy paths, all branch conditions, failure modes, recovery paths, handoff contracts, and observable states to produce build-ready specs that agents can implement against and ",
+    "bundlePath": "agency/specialized/specialized-workflow-architect",
     "bundleFiles": [
       "AGENTS.md",
       "SOUL.md"
@@ -2103,6 +2103,29 @@
       "AGENTS.md",
       "HEARTBEAT.md",
       "SOUL.md"
+    ]
+  },
+  {
+    "path": "agency/trading/crypto-market-analyst/SOURCE.md",
+    "source": "agency-agents",
+    "category": "trading",
+    "name": "Crypto Market Analyst",
+    "defaultRole": "trader",
+    "description": "Quantitative crypto market analyst specializing in multi-timeframe technical analysis, on-chain data interpretation, futures microstructure, and systematic trade signal generation using the SOP v8.1 framework.",
+    "bundlePath": "agency/trading/crypto-market-analyst",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md",
+      "TOOLS.md"
+    ],
+    "desiredSkills": [
+      "market-forecast",
+      "futures-microstructure",
+      "orderbook-analysis",
+      "smart-money-analysis",
+      "funding-settlement",
+      "prediction-journal"
     ]
   }
 ]

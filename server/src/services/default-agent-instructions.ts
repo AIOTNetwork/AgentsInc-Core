@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import { getAgencyCatalog, loadAgencyBundle } from "./agency-catalog.js";
+import { findCatalogEntry, getAgencyCatalog, loadAgencyBundle } from "./agency-catalog.js";
 
 const DEFAULT_AGENT_BUNDLE_FILES = {
   default: ["AGENTS.md"],
@@ -85,27 +85,42 @@ function pickBestMatch(
   return best;
 }
 
+export interface ResolvedAgentInstructions {
+  files: Record<string, string>;
+  desiredSkills?: string[];
+  matchedCatalogEntry?: string;
+}
+
 /**
  * Resolve instructions for a new agent hire.
  * Priority:
  *   1. Explicit catalogPath provided in the hire request
  *   2. Best match from agency catalog by role + name
  *   3. Default bundle for the role (ceo → ceo/, else → default/)
+ *
+ * Returns files + optional desiredSkills from the matched catalog entry.
  */
 export async function resolveAgentInstructionsForHire(
   role: string,
   name: string,
   catalogPath?: string | null,
-): Promise<Record<string, string>> {
+): Promise<ResolvedAgentInstructions> {
   // 1. Explicit catalog path
   if (catalogPath) {
+    const entry = await findCatalogEntry(catalogPath);
     const bundle = await loadAgencyBundle(catalogPath);
-    if (bundle) return bundle;
+    if (bundle) {
+      return {
+        files: bundle,
+        desiredSkills: entry?.desiredSkills,
+        matchedCatalogEntry: entry?.bundlePath ?? catalogPath,
+      };
+    }
   }
 
   // 2. CEO always uses the ceo/ bundle
   if (role === "ceo") {
-    return loadDefaultAgentInstructionsBundle("ceo");
+    return { files: await loadDefaultAgentInstructionsBundle("ceo") };
   }
 
   // 3. Look up agency catalog by role, pick best match by name similarity
@@ -116,12 +131,18 @@ export async function resolveAgentInstructionsForHire(
     if (byRole.length > 0) {
       const entry = pickBestMatch(byRole, name);
       const bundle = await loadAgencyBundle(entry.bundlePath);
-      if (bundle) return bundle;
+      if (bundle) {
+        return {
+          files: bundle,
+          desiredSkills: entry.desiredSkills,
+          matchedCatalogEntry: entry.bundlePath,
+        };
+      }
     }
   } catch {
     // Catalog not available — fall through to default
   }
 
   // 4. Fallback
-  return loadDefaultAgentInstructionsBundle("default");
+  return { files: await loadDefaultAgentInstructionsBundle("default") };
 }

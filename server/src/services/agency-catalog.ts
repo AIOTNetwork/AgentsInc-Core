@@ -10,6 +10,7 @@ export interface AgencyCatalogEntry {
   description: string;
   bundlePath: string;
   bundleFiles: string[];
+  desiredSkills?: string[];
 }
 
 export interface ParsedAgencyAgent {

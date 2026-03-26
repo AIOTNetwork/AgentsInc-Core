@@ -472,16 +472,23 @@ export function agentRoutes(db: Db) {
     const catalogPath = typeof adapterConfig.catalogPath === "string"
       ? adapterConfig.catalogPath
       : null;
-    const files = promptTemplate.trim().length > 0
-      ? { "AGENTS.md": promptTemplate }
+    const resolved = promptTemplate.trim().length > 0
+      ? { files: { "AGENTS.md": promptTemplate } }
       : await resolveAgentInstructionsForHire(agent.role, agent.name, catalogPath);
     const materialized = await instructions.materializeManagedBundle(
       agent,
-      files,
+      resolved.files,
       { entryFile: "AGENTS.md", replaceExisting: false },
     );
     const nextAdapterConfig = { ...materialized.adapterConfig };
     delete nextAdapterConfig.promptTemplate;
+    delete nextAdapterConfig.catalogPath;
+
+    // Pass desiredSkills from catalog entry back to caller via adapterConfig metadata
+    if ("desiredSkills" in resolved && resolved.desiredSkills?.length) {
+      nextAdapterConfig._catalogDesiredSkills = resolved.desiredSkills;
+      nextAdapterConfig._catalogMatchedEntry = resolved.matchedCatalogEntry;
+    }
 
     const updated = await svc.update(agent.id, { adapterConfig: nextAdapterConfig });
     return (updated as T | null) ?? { ...agent, adapterConfig: nextAdapterConfig };
