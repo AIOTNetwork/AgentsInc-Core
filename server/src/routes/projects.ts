@@ -9,8 +9,9 @@ import {
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { projectService, logActivity } from "../services/index.js";
-import { conflict } from "../errors.js";
+import { conflict, notFound } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { createWorkspaceSnapshot } from "../services/workspace-snapshot.js";
 
 export function projectRoutes(db: Db) {
   const router = Router();
@@ -288,6 +289,17 @@ export function projectRoutes(db: Db) {
     });
 
     res.json(project);
+  });
+
+  // --- Workspace Snapshot (for preview) ---
+
+  router.post("/projects/:id/workspace/snapshot", async (req, res) => {
+    const project = await svc.getById(req.params.id);
+    if (!project) throw notFound("Project not found");
+    assertCompanyAccess(req, project.companyId);
+
+    const result = await createWorkspaceSnapshot(project);
+    res.json(result);
   });
 
   return router;
