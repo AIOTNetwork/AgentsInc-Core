@@ -218,6 +218,13 @@ export function buildPaperclipEnv(agent: { id: string; companyId: string }): Rec
   const runtimePort = process.env.PAPERCLIP_LISTEN_PORT ?? process.env.PORT ?? "3100";
   const apiUrl = process.env.PAPERCLIP_API_URL ?? `http://${runtimeHost}:${runtimePort}`;
   vars.PAPERCLIP_API_URL = apiUrl;
+
+  // AgentsIncTools URL — enables agents to use preview, browser, and future tools
+  const toolsUrl = process.env.AGENTSINC_TOOLS_URL;
+  if (toolsUrl) {
+    vars.AGENTSINC_TOOLS_URL = toolsUrl;
+  }
+
   return vars;
 }
 
