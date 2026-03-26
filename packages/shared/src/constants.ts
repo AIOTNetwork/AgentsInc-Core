@@ -52,6 +52,7 @@ export const AGENT_ROLES = [
   "support",
   "writer",
   "security",
+  "trader",
 ] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
@@ -73,6 +74,7 @@ export const AGENT_ROLE_LABELS: Record<AgentRole, string> = {
   support: "Support",
   writer: "Writer",
   security: "Security",
+  trader: "Trader",
 };
 
 export const AGENT_ICON_NAMES = [
