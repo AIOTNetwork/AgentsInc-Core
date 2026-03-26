@@ -1274,6 +1274,57 @@ export function agentRoutes(db: Db) {
     res.json(state);
   });
 
+  // --- Agency Catalog (agent templates from agency-agents) ---
+
+  router.get("/agency/catalog", async (req, res) => {
+    const { getAgencyCatalog } = await import("../services/agency-catalog.js");
+    let catalog = await getAgencyCatalog();
+
+    const roleFilter = typeof req.query.role === "string" ? req.query.role : "";
+    const categoryFilter = typeof req.query.category === "string" ? req.query.category : "";
+    const sourceFilter = typeof req.query.source === "string" ? req.query.source : "";
+
+    if (roleFilter) {
+      catalog = catalog.filter((e) => e.defaultRole === roleFilter);
+    }
+    if (categoryFilter) {
+      catalog = catalog.filter((e) => e.category === categoryFilter);
+    }
+    if (sourceFilter) {
+      catalog = catalog.filter((e) => e.source === sourceFilter);
+    }
+
+    res.json(catalog);
+  });
+
+  router.get("/agency/agents", async (req, res) => {
+    const agentPath = typeof req.query.path === "string" ? req.query.path : "";
+    if (!agentPath.trim()) {
+      res.status(422).json({ error: "Query parameter 'path' is required" });
+      return;
+    }
+
+    const parsed = typeof req.query.parsed === "string" && req.query.parsed === "true";
+
+    if (parsed) {
+      const { getAgencyAgentParsed } = await import("../services/agency-catalog.js");
+      const result = await getAgencyAgentParsed(agentPath);
+      if (!result) {
+        res.status(404).json({ error: "Agency agent not found" });
+        return;
+      }
+      res.json(result);
+    } else {
+      const { getAgencyAgentRaw } = await import("../services/agency-catalog.js");
+      const raw = await getAgencyAgentRaw(agentPath);
+      if (raw === null) {
+        res.status(404).json({ error: "Agency agent not found" });
+        return;
+      }
+      res.json({ path: agentPath, content: raw });
+    }
+  });
+
   router.post("/companies/:companyId/agent-hires", validate(createAgentHireSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertCanCreateAgentsForCompany(req, companyId);
