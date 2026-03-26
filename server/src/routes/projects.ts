@@ -445,8 +445,12 @@ export function projectRoutes(db: Db) {
     if (!project) throw notFound("Project not found");
     assertCompanyAccess(req, project.companyId);
 
-    const result = await createWorkspaceSnapshot(project);
-    res.json(result);
+    try {
+      const result = await createWorkspaceSnapshot(project);
+      res.json(result);
+    } catch {
+      res.status(404).json({ error: "workspace_not_found", message: "Workspace directory not found on server" });
+    }
   });
 
   return router;
