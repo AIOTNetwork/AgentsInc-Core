@@ -1,4 +1,5 @@
-import { Router, type Request } from "express";
+import { Router, type Request, type Response } from "express";
+import multer from "multer";
 import type { Db } from "@paperclipai/db";
 import {
   createProjectSchema,
@@ -14,7 +15,7 @@ import { conflict, notFound } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { startRuntimeServicesForWorkspaceControl, stopRuntimeServicesForProjectWorkspace } from "../services/workspace-runtime.js";
 import { getTelemetryClient } from "../telemetry.js";
-import { createWorkspaceSnapshot } from "../services/workspace-snapshot.js";
+import { createWorkspaceSnapshot, getWorkspaceS3Sync } from "../services/workspace-snapshot.js";
 
 export function projectRoutes(db: Db) {
   const router = Router();
@@ -456,6 +457,53 @@ export function projectRoutes(db: Db) {
         message,
       });
     }
+  });
+
+  // --- Workspace Sync (upload tar.gz to S3 for cloud previews) ---
+
+  const workspaceSyncUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024, files: 1 }, // 100MB
+  });
+
+  async function runSyncUpload(req: Request, res: Response) {
+    await new Promise<void>((resolve, reject) => {
+      workspaceSyncUpload.single("file")(req, res, (err: unknown) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  router.post("/projects/:id/workspace/sync", async (req, res) => {
+    const project = await svc.getById(req.params.id);
+    if (!project) throw notFound("Project not found");
+    assertCompanyAccess(req, project.companyId);
+
+    const sync = getWorkspaceS3Sync();
+    if (!sync.enabled) {
+      res.status(422).json({ error: "s3_not_configured", message: "S3/MinIO storage is required for workspace sync" });
+      return;
+    }
+
+    try {
+      await runSyncUpload(req, res);
+    } catch (err) {
+      if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "LIMIT_FILE_SIZE") {
+        res.status(422).json({ error: "file_too_large", message: "Workspace snapshot exceeds 100MB limit" });
+        return;
+      }
+      throw err;
+    }
+
+    const file = (req as Request & { file?: { buffer: Buffer; originalname: string } }).file;
+    if (!file) {
+      res.status(400).json({ error: "missing_file", message: "Missing file field 'file'" });
+      return;
+    }
+
+    await sync.saveSnapshot(project.companyId, project.id, file.buffer);
+    res.json({ ok: true, byteSize: file.buffer.length });
   });
 
   return router;

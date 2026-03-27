@@ -57,6 +57,7 @@ import {
 } from "./execution-workspace-policy.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { redactCurrentUserText, redactCurrentUserValue } from "../log-redaction.js";
+import { getWorkspaceS3Sync, TAR_EXCLUDES } from "./workspace-snapshot.js";
 import {
   hasSessionCompactionThresholds,
   resolveSessionCompactionPolicy,
@@ -1063,6 +1064,31 @@ function resolveNextSessionState(input: {
     displayId,
     legacySessionId,
   };
+}
+
+/**
+ * Tar a workspace directory and upload to S3/MinIO for cloud preview support.
+ * Fire-and-forget — failures are logged but don't block the heartbeat.
+ */
+async function syncWorkspaceToS3(companyId: string, projectId: string, cwd: string): Promise<void> {
+  const sync = getWorkspaceS3Sync();
+  if (!sync.enabled) return;
+
+  const { existsSync, statSync, readFileSync, unlinkSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { randomUUID } = await import("node:crypto");
+
+  if (!existsSync(cwd) || !statSync(cwd).isDirectory()) return;
+
+  const tarPath = path.join(tmpdir(), `ws-sync-${randomUUID().slice(0, 12)}.tar.gz`);
+  try {
+    const excludeArgs = TAR_EXCLUDES.flatMap((p) => ["--exclude", p]);
+    await execFile("tar", ["czf", tarPath, ...excludeArgs, "-C", cwd, "."], { timeout: 60_000 });
+    const tarBuffer = readFileSync(tarPath);
+    await sync.saveSnapshot(companyId, projectId, tarBuffer);
+  } finally {
+    try { unlinkSync(tarPath); } catch { /* ignore */ }
+  }
 }
 
 export function heartbeatService(db: Db) {
@@ -3087,6 +3113,13 @@ export function heartbeatService(db: Db) {
         }
       }
       await finalizeAgentStatus(agent.id, outcome);
+
+      // Auto-sync workspace to S3/MinIO after successful run (for cloud preview support)
+      if (outcome === "succeeded" && resolvedProjectId && executionWorkspace.cwd) {
+        syncWorkspaceToS3(agent.companyId, resolvedProjectId, executionWorkspace.cwd).catch((syncErr) => {
+          logger.warn({ err: syncErr, projectId: resolvedProjectId }, "workspace S3 sync failed (non-fatal)");
+        });
+      }
     } catch (err) {
       const message = redactCurrentUserText(
         err instanceof Error ? err.message : "Unknown adapter failure",
