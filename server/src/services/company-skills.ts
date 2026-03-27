@@ -1074,7 +1074,31 @@ async function readUrlSkillImports(
   }
 
   if (url.startsWith("http://") || url.startsWith("https://")) {
-    const markdown = await fetchText(url);
+    // Try JSON bundle first (includes SKILL.md + references)
+    let markdown: string;
+    let bundledFiles: Record<string, string> | null = null;
+    try {
+      const jsonRes = await fetch(url, { headers: { Accept: "application/json" } });
+      if (jsonRes.ok) {
+        const contentType = jsonRes.headers.get("content-type") ?? "";
+        if (contentType.includes("application/json")) {
+          const data = await jsonRes.json() as { files?: Record<string, string> };
+          if (data.files && typeof data.files["SKILL.md"] === "string") {
+            bundledFiles = data.files;
+            markdown = data.files["SKILL.md"];
+          } else {
+            markdown = await fetchText(url);
+          }
+        } else {
+          markdown = await jsonRes.text();
+        }
+      } else {
+        markdown = await fetchText(url);
+      }
+    } catch {
+      markdown = await fetchText(url);
+    }
+
     const parsedMarkdown = parseFrontmatterMarkdown(markdown);
     const urlObj = new URL(url);
     const fileName = path.posix.basename(urlObj.pathname);
@@ -1088,26 +1112,36 @@ async function readUrlSkillImports(
       sourceKind: "url",
     };
     const inventory: CompanySkillFileInventoryEntry[] = [{ path: "SKILL.md", kind: "skill" }];
-    return {
-      skills: [{
-        key: deriveCanonicalSkillKey(companyId, {
-          slug,
-          sourceType: "url",
-          sourceLocator: url,
-          metadata,
-        }),
+    if (bundledFiles) {
+      for (const filePath of Object.keys(bundledFiles)) {
+        if (filePath === "SKILL.md") continue;
+        inventory.push({ path: filePath, kind: classifyInventoryKind(filePath) });
+      }
+    }
+    const skill: ImportedSkill = {
+      key: deriveCanonicalSkillKey(companyId, {
         slug,
-        name: asString(parsedMarkdown.frontmatter.name) ?? slug,
-        description: asString(parsedMarkdown.frontmatter.description),
-        markdown,
         sourceType: "url",
         sourceLocator: url,
-        sourceRef: null,
-        trustLevel: deriveTrustLevel(inventory),
-        compatibility: "compatible",
-        fileInventory: inventory,
         metadata,
-      }],
+      }),
+      slug,
+      name: asString(parsedMarkdown.frontmatter.name) ?? slug,
+      description: asString(parsedMarkdown.frontmatter.description),
+      markdown,
+      sourceType: "url",
+      sourceLocator: url,
+      sourceRef: null,
+      trustLevel: deriveTrustLevel(inventory),
+      compatibility: "compatible",
+      fileInventory: inventory,
+      metadata,
+    };
+    if (bundledFiles) {
+      (skill as ImportedSkill & { bundledFiles?: Record<string, string> }).bundledFiles = bundledFiles;
+    }
+    return {
+      skills: [skill],
       warnings,
     };
   }
@@ -2286,6 +2320,27 @@ export function companySkillService(db: Db) {
       }
     }
     const imported = await upsertImportedSkills(companyId, filteredSkills);
+
+    // Write bundled reference files to disk for URL-imported skills
+    for (const skill of filteredSkills) {
+      const bundled = (skill as ImportedSkill & { bundledFiles?: Record<string, string> }).bundledFiles;
+      if (!bundled) continue;
+      const persisted = imported.find((s) => s.key === skill.key);
+      if (!persisted) continue;
+      const skillDir = path.resolve(resolveManagedSkillsRoot(companyId), persisted.slug);
+      await fs.mkdir(skillDir, { recursive: true });
+      for (const [filePath, content] of Object.entries(bundled)) {
+        const targetPath = path.resolve(skillDir, filePath);
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await fs.writeFile(targetPath, content, "utf8");
+      }
+      // Update sourceLocator to point to the local materialized dir so readFile works
+      await db
+        .update(companySkills)
+        .set({ sourceType: "local_path", sourceLocator: skillDir, updatedAt: new Date() })
+        .where(eq(companySkills.id, persisted.id));
+    }
+
     return { imported, warnings };
   }
 
