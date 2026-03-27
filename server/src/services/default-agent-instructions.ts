@@ -118,8 +118,27 @@ export async function resolveAgentInstructionsForHire(
     }
   }
 
-  // 2. CEO always uses the ceo/ bundle
+  // 2. CEO: check catalog for specialized variants first, fall back to generic ceo/ bundle
   if (role === "ceo") {
+    try {
+      const catalog = await getAgencyCatalog();
+      const ceoCandidates = catalog.filter((e) => e.defaultRole === "ceo");
+      if (ceoCandidates.length > 0) {
+        const entry = pickBestMatch(ceoCandidates, name);
+        const score = scoreMatch(entry.name, entry.description, name);
+        // Only use catalog match if there's meaningful similarity (not random fallback)
+        if (score >= 30) {
+          const bundle = await loadAgencyBundle(entry.bundlePath);
+          if (bundle) {
+            return {
+              files: bundle,
+              desiredSkills: entry.desiredSkills,
+              matchedCatalogEntry: entry.bundlePath,
+            };
+          }
+        }
+      }
+    } catch { /* fall through to default CEO */ }
     return { files: await loadDefaultAgentInstructionsBundle("ceo") };
   }
 
