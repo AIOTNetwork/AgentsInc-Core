@@ -152,6 +152,16 @@ async function authorizeUpgrade(
     };
   }
 
+  // Instance API secret — trusted service token for the Office UI
+  const instanceSecret = process.env.PAPERCLIP_INSTANCE_API_SECRET;
+  if (instanceSecret && token === instanceSecret) {
+    return {
+      companyId,
+      actorType: "board",
+      actorId: "instance",
+    };
+  }
+
   const tokenHash = hashToken(token);
   const key = await db
     .select()
@@ -160,6 +170,15 @@ async function authorizeUpgrade(
     .then((rows) => rows[0] ?? null);
 
   if (!key || key.companyId !== companyId) {
+    // Token invalid — in local_trusted mode, fall back to board context
+    // instead of rejecting (token may be stale or from a different env)
+    if (opts.deploymentMode === "local_trusted") {
+      return {
+        companyId,
+        actorType: "board",
+        actorId: "board",
+      };
+    }
     return null;
   }
 
