@@ -45,6 +45,8 @@ interface ProjectWithCodebase {
   name: string;
   codebase: {
     effectiveLocalFolder: string | null;
+    managedFolder?: string | null;
+    localFolder?: string | null;
     repoUrl: string | null;
     repoRef: string | null;
   };
@@ -77,11 +79,23 @@ export function getWorkspaceS3Sync(): WorkspaceS3Sync {
  * 1. Local filesystem — tar the directory and upload
  * 2. S3 fallback — if a synced snapshot already exists in MinIO, return a presigned URL for it
  */
+function findExistingDir(...candidates: (string | null | undefined)[]): string | null {
+  for (const dir of candidates) {
+    if (dir && fs.existsSync(dir) && fs.statSync(dir).isDirectory()) return dir;
+  }
+  return null;
+}
+
 export async function createWorkspaceSnapshot(
   project: ProjectWithCodebase,
 ): Promise<SnapshotResult> {
-  const workspaceDir = project.codebase.effectiveLocalFolder;
-  const hasLocalDir = workspaceDir && fs.existsSync(workspaceDir) && fs.statSync(workspaceDir).isDirectory();
+  // Try effectiveLocalFolder first, then managedFolder (which may differ on cloud deployments
+  // where the explicit cwd points to a path that only exists on the user's local machine)
+  const workspaceDir = findExistingDir(
+    project.codebase.effectiveLocalFolder,
+    project.codebase.managedFolder,
+  );
+  const hasLocalDir = !!workspaceDir;
 
   // --- Path 1: Local filesystem available ---
   if (hasLocalDir) {
