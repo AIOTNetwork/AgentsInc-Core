@@ -1,5 +1,19 @@
 const BASE = "/api";
 
+const TOKEN_KEY = "paperclip_board_token";
+
+export function setBoardToken(token: string | null) {
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(TOKEN_KEY);
+  }
+}
+
+export function getBoardToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -17,6 +31,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const body = init?.body;
   if (!(body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
+  }
+
+  const token = getBoardToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
 
   const res = await fetch(`${BASE}${path}`, {

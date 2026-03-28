@@ -4,6 +4,7 @@ import type { LiveEvent } from "@paperclipai/shared";
 import { instanceSettingsApi } from "../../api/instanceSettings";
 import { heartbeatsApi, type LiveRunForIssue } from "../../api/heartbeats";
 import { buildTranscript, getUIAdapter, onAdapterChange, type RunLogChunk, type TranscriptEntry } from "../../adapters";
+import { getBoardToken } from "../../api/client";
 import { queryKeys } from "../../lib/queryKeys";
 
 const LOG_POLL_INTERVAL_MS = 2000;
@@ -191,7 +192,8 @@ export function useLiveRunTranscripts({
     const connect = () => {
       if (closed) return;
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-      const url = `${protocol}://${window.location.host}/api/companies/${encodeURIComponent(companyId)}/events/ws`;
+      const boardToken = getBoardToken();
+      const url = `${protocol}://${window.location.host}/api/companies/${encodeURIComponent(companyId)}/events/ws${boardToken ? `?token=${encodeURIComponent(boardToken)}` : ""}`;
       socket = new WebSocket(url);
 
       socket.onmessage = (message) => {

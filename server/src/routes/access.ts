@@ -14,6 +14,7 @@ import type { Db } from "@paperclipai/db";
 import {
   agentApiKeys,
   authUsers,
+  boardApiKeys,
   companies,
   invites,
   joinRequests
@@ -48,6 +49,11 @@ import {
   logActivity,
   notifyHireApproved
 } from "../services/index.js";
+import {
+  createBoardApiToken,
+  hashBearerToken,
+  boardApiKeyExpiresAt
+} from "../services/board-auth.js";
 import { assertCompanyAccess } from "./authz.js";
 import {
   claimBoardOwnership,
@@ -2935,6 +2941,43 @@ export function accessRoutes(
       res.json(memberships);
     }
   );
+
+  router.get("/auth-config", (_req, res) => {
+    const magicLink = !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
+    const google = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+    const github = !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
+    const hasAnyNewMethod = magicLink || google || github;
+    res.json({
+      magicLink,
+      google,
+      github,
+      emailPassword: !hasAnyNewMethod,
+    });
+  });
+
+  router.post("/exchange-session-for-key", async (req, res) => {
+    if (req.actor.type !== "board" || !req.actor.userId || req.actor.userId === "local-board") {
+      res.status(401).json({ error: "Valid session required" });
+      return;
+    }
+
+    const token = createBoardApiToken();
+    const keyHash = hashBearerToken(token);
+    const expiresAt = boardApiKeyExpiresAt();
+
+    const [key] = await db.insert(boardApiKeys).values({
+      userId: req.actor.userId,
+      name: "office-ui",
+      keyHash,
+      expiresAt,
+    }).returning();
+
+    res.json({
+      token,
+      keyId: key.id,
+      expiresAt: expiresAt.toISOString(),
+    });
+  });
 
   return router;
 }

@@ -1,3 +1,5 @@
+import { setBoardToken } from "./client";
+
 export type AuthSession = {
   session: { id: string; userId: string };
   user: { id: string; email: string | null; name: string | null };
@@ -43,11 +45,23 @@ async function authPost(path: string, body: Record<string, unknown>) {
   return payload;
 }
 
+export type AuthConfig = {
+  magicLink: boolean;
+  google: boolean;
+  emailPassword: boolean;
+  github: boolean;
+};
+
 export const authApi = {
   getSession: async (): Promise<AuthSession | null> => {
+    const headers: Record<string, string> = { Accept: "application/json" };
+    const token = localStorage.getItem("paperclip_board_token");
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
     const res = await fetch("/api/auth/get-session", {
       credentials: "include",
-      headers: { Accept: "application/json" },
+      headers,
     });
     if (res.status === 401) return null;
     const payload = await res.json().catch(() => null);
@@ -60,6 +74,15 @@ export const authApi = {
     return nested;
   },
 
+  signOut: async () => {
+    try {
+      await authPost("/sign-out", {});
+    } catch {
+      // Server sign-out may fail if session is already invalid — clear locally regardless
+    }
+    setBoardToken(null);
+  },
+
   signInEmail: async (input: { email: string; password: string }) => {
     await authPost("/sign-in/email", input);
   },
@@ -68,7 +91,53 @@ export const authApi = {
     await authPost("/sign-up/email", input);
   },
 
-  signOut: async () => {
-    await authPost("/sign-out", {});
+  sendMagicLink: async (input: { email: string; callbackURL?: string }) => {
+    await authPost("/sign-in/magic-link", {
+      email: input.email,
+      callbackURL: input.callbackURL ?? "/",
+    });
+  },
+
+  signInSocial: async (input: { provider: "google" | "github"; callbackURL?: string }) => {
+    const res = await fetch("/api/auth/sign-in/social", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: input.provider,
+        callbackURL: input.callbackURL ?? "/",
+      }),
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) {
+      const message =
+        (payload as { error?: { message?: string } | string } | null)?.error &&
+        typeof (payload as { error?: { message?: string } | string }).error === "object"
+          ? ((payload as { error?: { message?: string } }).error?.message ?? `Request failed: ${res.status}`)
+          : (payload as { error?: string } | null)?.error ?? `Request failed: ${res.status}`;
+      throw new Error(message);
+    }
+    if (payload?.url) {
+      window.location.href = payload.url;
+    }
+  },
+
+  exchangeSessionForKey: async (): Promise<{ token: string; keyId: string; expiresAt: string }> => {
+    const res = await fetch("/api/exchange-session-for-key", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error((payload as { error?: string } | null)?.error ?? "Failed to exchange session");
+    }
+    return payload as { token: string; keyId: string; expiresAt: string };
+  },
+
+  getAuthConfig: async (): Promise<AuthConfig> => {
+    const res = await fetch("/api/auth-config");
+    if (!res.ok) return { magicLink: false, google: false, github: false, emailPassword: true };
+    return res.json();
   },
 };

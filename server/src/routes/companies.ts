@@ -1,5 +1,7 @@
 import { Router, type Request } from "express";
+import { eq, and } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { companyMemberships } from "@paperclipai/db";
 import {
   DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
   companyPortabilityExportSchema,
@@ -257,10 +259,28 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     res.json(result);
   });
 
+  const MAX_COMPANIES_PER_USER = 3;
+
   router.post("/", validate(createCompanySchema), async (req, res) => {
     assertBoard(req);
-    if (!(req.actor.source === "local_implicit" || req.actor.isInstanceAdmin)) {
-      throw forbidden("Instance admin required");
+    if (req.actor.source !== "local_implicit") {
+      // Enforce company limit per user
+      const userId = req.actor.userId;
+      if (userId) {
+        const owned = await db
+          .select({ companyId: companyMemberships.companyId })
+          .from(companyMemberships)
+          .where(
+            and(
+              eq(companyMemberships.principalType, "user"),
+              eq(companyMemberships.principalId, userId),
+              eq(companyMemberships.status, "active"),
+            ),
+          );
+        if (owned.length >= MAX_COMPANIES_PER_USER) {
+          throw forbidden(`You can create up to ${MAX_COMPANIES_PER_USER} companies`);
+        }
+      }
     }
     const company = await svc.create(req.body);
     await access.ensureMembership(company.id, "user", req.actor.userId ?? "local-board", "owner", "active");

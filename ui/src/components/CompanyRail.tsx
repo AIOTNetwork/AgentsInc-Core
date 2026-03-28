@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Paperclip, Plus } from "lucide-react";
-import { useQueries } from "@tanstack/react-query";
+import { LogOut, Paperclip, Plus } from "lucide-react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
   closestCenter,
@@ -21,6 +21,7 @@ import { useDialog } from "../context/DialogContext";
 import { cn } from "../lib/utils";
 import { queryKeys } from "../lib/queryKeys";
 import { sidebarBadgesApi } from "../api/sidebarBadges";
+import { authApi } from "../api/auth";
 import { heartbeatsApi } from "../api/heartbeats";
 import { useLocation, useNavigate } from "@/lib/router";
 import {
@@ -158,6 +159,7 @@ export function CompanyRail() {
   const { openOnboarding } = useDialog();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const isInstanceRoute = location.pathname.startsWith("/instance/");
   const highlightedCompanyId = isInstanceRoute ? null : selectedCompanyId;
   const sidebarCompanies = useMemo(
@@ -321,6 +323,29 @@ export function CompanyRail() {
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={8}>
             <p>Add company</p>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+
+      {/* Sign out */}
+      <div className="w-8 h-px bg-border mx-auto shrink-0" />
+      <div className="flex items-center justify-center py-2 pb-3 shrink-0">
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <button
+              onClick={async () => {
+                await authApi.signOut();
+                queryClient.clear();
+                navigate("/auth");
+              }}
+              className="flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+              aria-label="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={8}>
+            <p>Sign out</p>
           </TooltipContent>
         </Tooltip>
       </div>

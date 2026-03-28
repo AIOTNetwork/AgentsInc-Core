@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import type { Duplex } from "node:stream";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agentApiKeys, companyMemberships, instanceUserRoles } from "@paperclipai/db";
+import { agentApiKeys, boardApiKeys, companyMemberships, instanceUserRoles } from "@paperclipai/db";
 import type { DeploymentMode } from "@paperclipai/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { logger } from "../middleware/logger.js";
@@ -152,17 +152,46 @@ async function authorizeUpgrade(
     };
   }
 
-  // Instance API secret — trusted service token for the Office UI
-  const instanceSecret = process.env.PAPERCLIP_INSTANCE_API_SECRET;
-  if (instanceSecret && token === instanceSecret) {
-    return {
-      companyId,
-      actorType: "board",
-      actorId: "instance",
-    };
+  const tokenHash = hashToken(token);
+
+  // Check board API keys first (Office UI uses these after login)
+  const boardKey = await db
+    .select()
+    .from(boardApiKeys)
+    .where(and(eq(boardApiKeys.keyHash, tokenHash), isNull(boardApiKeys.revokedAt)))
+    .then((rows) => {
+      const now = new Date();
+      return rows.find((row) => !row.expiresAt || row.expiresAt.getTime() > now.getTime()) ?? null;
+    });
+
+  if (boardKey) {
+    const memberships = await db
+      .select({ companyId: companyMemberships.companyId })
+      .from(companyMemberships)
+      .where(
+        and(
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.principalId, boardKey.userId),
+          eq(companyMemberships.status, "active"),
+        ),
+      );
+    const [roleRow] = await db
+      .select({ id: instanceUserRoles.id })
+      .from(instanceUserRoles)
+      .where(and(eq(instanceUserRoles.userId, boardKey.userId), eq(instanceUserRoles.role, "instance_admin")));
+
+    const hasAccess = roleRow || memberships.some((row) => row.companyId === companyId);
+    if (hasAccess) {
+      await db.update(boardApiKeys).set({ lastUsedAt: new Date() }).where(eq(boardApiKeys.id, boardKey.id));
+      return {
+        companyId,
+        actorType: "board",
+        actorId: boardKey.userId,
+      };
+    }
   }
 
-  const tokenHash = hashToken(token);
+  // Check agent API keys
   const key = await db
     .select()
     .from(agentApiKeys)
@@ -170,8 +199,6 @@ async function authorizeUpgrade(
     .then((rows) => rows[0] ?? null);
 
   if (!key || key.companyId !== companyId) {
-    // Token invalid — in local_trusted mode, fall back to board context
-    // instead of rejecting (token may be stale or from a different env)
     if (opts.deploymentMode === "local_trusted") {
       return {
         companyId,

@@ -52,7 +52,7 @@ export function boardMutationGuard(): RequestHandler {
 
     // Local-trusted mode and board bearer keys are not browser-session requests.
     // In these modes, origin/referer headers can be absent; do not block those mutations.
-    if (req.actor.source === "local_implicit" || req.actor.source === "board_key" || req.actor.source === "instance_key") {
+    if (req.actor.source === "local_implicit" || req.actor.source === "board_key") {
       next();
       return;
     }

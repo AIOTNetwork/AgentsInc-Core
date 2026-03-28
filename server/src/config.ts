@@ -39,6 +39,17 @@ if (!isSameFile && existsSync(CWD_ENV_PATH)) {
 
 maybeRepairLegacyWorktreeConfigAndEnvFiles();
 
+// Also check parent directory .env (monorepo root pattern: server runs from packages/server/)
+const PARENT_ENV_PATH = resolve(process.cwd(), "..", ".env");
+if (existsSync(PARENT_ENV_PATH)) {
+  const isAlreadyLoaded =
+    (existsSync(CWD_ENV_PATH) && realpathSync(PARENT_ENV_PATH) === realpathSync(CWD_ENV_PATH)) ||
+    (existsSync(PAPERCLIP_ENV_FILE_PATH) && realpathSync(PARENT_ENV_PATH) === realpathSync(PAPERCLIP_ENV_FILE_PATH));
+  if (!isAlreadyLoaded) {
+    loadDotenv({ path: PARENT_ENV_PATH, override: false, quiet: true });
+  }
+}
+
 type DatabaseMode = "embedded-postgres" | "postgres";
 
 export interface Config {
