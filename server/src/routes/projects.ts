@@ -16,6 +16,9 @@ import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { startRuntimeServicesForWorkspaceControl, stopRuntimeServicesForProjectWorkspace } from "../services/workspace-runtime.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { createWorkspaceSnapshot, getWorkspaceS3Sync } from "../services/workspace-snapshot.js";
+import fsSync from "node:fs";
+import fsPromises from "node:fs/promises";
+import path from "node:path";
 
 export function projectRoutes(db: Db) {
   const router = Router();
@@ -437,6 +440,85 @@ export function projectRoutes(db: Db) {
     });
 
     res.json(project);
+  });
+
+  // --- Workspace File Browser ---
+
+  function resolveWorkspaceDir(project: { codebase: { effectiveLocalFolder: string | null; managedFolder?: string | null } }): string | null {
+    const candidates = [project.codebase.effectiveLocalFolder, project.codebase.managedFolder];
+    for (const dir of candidates) {
+      if (dir && fsSync.existsSync(dir) && fsSync.statSync(dir).isDirectory()) return dir;
+    }
+    return null;
+  }
+
+  const FILE_EXCLUDES = new Set(["node_modules", ".git", ".next", ".nuxt", "dist", "build", ".cache", ".turbo", ".vercel", "__pycache__", "coverage", ".nyc_output"]);
+
+  interface FileEntry { name: string; path: string; type: "file" | "dir"; size?: number }
+
+  async function listDir(root: string, relPath: string): Promise<FileEntry[]> {
+    const absDir = path.resolve(root, relPath);
+    // Prevent directory traversal
+    if (!absDir.startsWith(root)) return [];
+    const entries = await fsPromises.readdir(absDir, { withFileTypes: true }).catch(() => []);
+    const result: FileEntry[] = [];
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") && entry.name !== ".env.example") continue;
+      if (FILE_EXCLUDES.has(entry.name)) continue;
+      const entryRelPath = relPath ? `${relPath}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        result.push({ name: entry.name, path: entryRelPath, type: "dir" });
+      } else if (entry.isFile()) {
+        const stat = await fsPromises.stat(path.join(absDir, entry.name)).catch(() => null);
+        result.push({ name: entry.name, path: entryRelPath, type: "file", size: stat?.size ?? 0 });
+      }
+    }
+    result.sort((a, b) => {
+      if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    return result;
+  }
+
+  router.get("/projects/:id/workspace/files", async (req, res) => {
+    const project = await svc.getById(req.params.id);
+    if (!project) throw notFound("Project not found");
+    assertCompanyAccess(req, project.companyId);
+
+    const root = resolveWorkspaceDir(project);
+    if (!root) {
+      res.status(404).json({ error: "workspace_not_found", files: [] });
+      return;
+    }
+
+    const dirPath = typeof req.query.path === "string" ? req.query.path : "";
+    const files = await listDir(root, dirPath);
+    res.json({ root: dirPath || ".", files });
+  });
+
+  router.get("/projects/:id/workspace/files/read", async (req, res) => {
+    const project = await svc.getById(req.params.id);
+    if (!project) throw notFound("Project not found");
+    assertCompanyAccess(req, project.companyId);
+
+    const root = resolveWorkspaceDir(project);
+    if (!root) { res.status(404).json({ error: "workspace_not_found" }); return; }
+
+    const filePath = typeof req.query.path === "string" ? req.query.path : "";
+    if (!filePath) { res.status(400).json({ error: "path is required" }); return; }
+
+    const absPath = path.resolve(root, filePath);
+    if (!absPath.startsWith(root)) { res.status(403).json({ error: "path traversal" }); return; }
+
+    try {
+      const stat = await fsPromises.stat(absPath);
+      if (!stat.isFile()) { res.status(400).json({ error: "not a file" }); return; }
+      if (stat.size > 512 * 1024) { res.status(422).json({ error: "file too large", size: stat.size }); return; }
+      const content = await fsPromises.readFile(absPath, "utf-8");
+      res.json({ path: filePath, content, size: stat.size });
+    } catch {
+      res.status(404).json({ error: "file not found" });
+    }
   });
 
   // --- Workspace Snapshot (for preview) ---
