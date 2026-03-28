@@ -2,13 +2,17 @@ import type { Request, RequestHandler } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { magicLink } from "better-auth/plugins";
 import { toNodeHandler } from "better-auth/node";
+import Mailgun from "mailgun.js";
+import FormData from "form-data";
 import type { Db } from "@paperclipai/db";
 import {
   authAccounts,
   authSessions,
   authUsers,
   authVerifications,
+  instanceUserRoles,
 } from "@paperclipai/db";
 import type { Config } from "../config.js";
 
@@ -62,6 +66,7 @@ export function deriveAuthTrustedOrigins(config: Config): string[] {
     }
   }
 
+
   return Array.from(trustedOrigins);
 }
 
@@ -72,6 +77,15 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
 
   const publicUrl = process.env.PAPERCLIP_PUBLIC_URL ?? baseUrl;
   const isHttpOnly = publicUrl ? publicUrl.startsWith("http://") : false;
+
+  const mailgunApiKey = process.env.MAILGUN_API_KEY;
+  const mailgunDomain = process.env.MAILGUN_DOMAIN;
+  const emailFrom = process.env.PAPERCLIP_EMAIL_FROM ?? "Paperclip <noreply@paperclip.dev>";
+  const hasGoogle = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  const hasGithub = !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
+  const hasMagicLink = !!(mailgunApiKey && mailgunDomain);
+  // Keep email+password as fallback when no other auth methods are configured
+  const hasAnyNewMethod = hasMagicLink || hasGoogle || hasGithub;
 
   const authConfig = {
     baseURL: baseUrl,
@@ -87,9 +101,91 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
       },
     }),
     emailAndPassword: {
-      enabled: true,
+      enabled: !hasAnyNewMethod,
       requireEmailVerification: false,
       disableSignUp: config.authDisableSignUp,
+    },
+    socialProviders: {
+      ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+        ? {
+            google: {
+              clientId: process.env.GOOGLE_CLIENT_ID,
+              clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            },
+          }
+        : {}),
+      ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
+        ? {
+            github: {
+              clientId: process.env.GITHUB_CLIENT_ID,
+              clientSecret: process.env.GITHUB_CLIENT_SECRET,
+            },
+          }
+        : {}),
+    },
+    plugins: [
+      ...(hasMagicLink
+        ? [
+            magicLink({
+              sendMagicLink: async ({ email, url }: { email: string; url: string }) => {
+                const mg = new Mailgun(FormData);
+                const client = mg.client({
+                  username: "api",
+                  key: mailgunApiKey!,
+                  ...(process.env.MAILGUN_API_URL ? { url: process.env.MAILGUN_API_URL } : {}),
+                });
+                await client.messages.create(mailgunDomain!, {
+                  from: emailFrom,
+                  to: [email],
+                  subject: "Your AgentsInc sign-in link ✨",
+                  html: [
+                    `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>`,
+                    `<body style="margin:0;padding:0;background:#0a0a0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">`,
+                    `<div style="max-width:480px;margin:0 auto;padding:48px 24px">`,
+                    `<div style="text-align:center;margin-bottom:32px">`,
+                    `<span style="font-size:28px">📎</span>`,
+                    `<h1 style="color:#e2e8f0;font-size:20px;font-weight:600;margin:12px 0 4px">AgentsInc</h1>`,
+                    `</div>`,
+                    `<div style="background:#12121a;border:1px solid #1e1e2e;border-radius:12px;padding:32px 24px;text-align:center">`,
+                    `<p style="color:#e2e8f0;font-size:16px;font-weight:500;margin:0 0 8px">Your team is waiting 🚀</p>`,
+                    `<p style="color:#94a3b8;font-size:14px;line-height:1.6;margin:0 0 24px">`,
+                    `Click below to sign in and get back to building with your AI agents. No password needed — this link is your key.`,
+                    `</p>`,
+                    `<a href="${url}" style="display:inline-block;background:#5b8dea;color:#fff;font-size:14px;font-weight:600;text-decoration:none;padding:12px 32px;border-radius:8px;letter-spacing:0.3px">`,
+                    `Sign in to AgentsInc`,
+                    `</a>`,
+                    `<p style="color:#475569;font-size:12px;margin:20px 0 0;line-height:1.5">`,
+                    `This link expires in 5 minutes and can only be used once.<br>If you didn't request this, you can safely ignore it.`,
+                    `</p>`,
+                    `</div>`,
+                    `<p style="color:#334155;font-size:11px;text-align:center;margin-top:24px">`,
+                    `AgentsInc — Your AI workforce, managed.`,
+                    `</p>`,
+                    `</div></body></html>`,
+                  ].join("\n"),
+                });
+              },
+              disableSignUp: config.authDisableSignUp,
+            }),
+          ]
+        : []),
+    ],
+    // Auto-grant instance_admin to every new user (each user is their own instance admin)
+    databaseHooks: {
+      user: {
+        create: {
+          after: async (user: { id: string }) => {
+            try {
+              await db.insert(instanceUserRoles).values({
+                userId: user.id,
+                role: "instance_admin",
+              });
+            } catch {
+              // Role may already exist (e.g. re-creation), ignore
+            }
+          },
+        },
+      },
     },
     ...(isHttpOnly ? { advanced: { useSecureCookies: false } } : {}),
   };
