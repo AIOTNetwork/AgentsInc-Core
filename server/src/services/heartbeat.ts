@@ -58,6 +58,8 @@ import {
 import { instanceSettingsService } from "./instance-settings.js";
 import { redactCurrentUserText, redactCurrentUserValue } from "../log-redaction.js";
 import { getWorkspaceS3Sync, TAR_EXCLUDES } from "./workspace-snapshot.js";
+import { githubAppService } from "./github-app.js";
+import { gitFetchAndReset, gitClone, gitCommitMergeAndPush } from "./workspace-git.js";
 import {
   hasSessionCompactionThresholds,
   resolveSessionCompactionPolicy,
@@ -181,11 +183,14 @@ function deriveRepoNameFromRepoUrl(repoUrl: string | null): string | null {
   }
 }
 
-async function ensureManagedProjectWorkspace(input: {
-  companyId: string;
-  projectId: string;
-  repoUrl: string | null;
-}): Promise<{ cwd: string; warning: string | null }> {
+async function ensureManagedProjectWorkspace(
+  db: Db,
+  input: {
+    companyId: string;
+    projectId: string;
+    repoUrl: string | null;
+  },
+): Promise<{ cwd: string; warning: string | null }> {
   const cwd = resolveManagedProjectWorkspaceDir({
     companyId: input.companyId,
     projectId: input.projectId,
@@ -201,12 +206,23 @@ async function ensureManagedProjectWorkspace(input: {
     return { cwd, warning: null };
   }
 
+  // Resolve credential URL for private repos via GitHub App
+  const github = githubAppService(db);
+  const credUrl = await github.getCredentialUrl(input.companyId, input.repoUrl);
+
   const gitDirExists = await fs
     .stat(path.resolve(cwd, ".git"))
     .then((entry) => entry.isDirectory())
     .catch(() => false);
+
   if (gitDirExists) {
-    return { cwd, warning: null };
+    // Fetch + reset to get latest code (instead of using stale checkout)
+    const defaultBranch = await getDefaultBranch(cwd).catch(() => "main");
+    const result = await gitFetchAndReset(cwd, credUrl, defaultBranch);
+    if (result.warning) {
+      logger.warn({ warning: result.warning, cwd }, "git fetch+reset warning");
+    }
+    return { cwd, warning: result.warning ?? null };
   }
 
   if (stats) {
@@ -220,16 +236,17 @@ async function ensureManagedProjectWorkspace(input: {
     await fs.rm(cwd, { recursive: true, force: true });
   }
 
-  try {
-    await execFile("git", ["clone", input.repoUrl, cwd], {
-      env: sanitizeRuntimeServiceBaseEnv(process.env),
-      timeout: MANAGED_WORKSPACE_GIT_CLONE_TIMEOUT_MS,
-    });
-    return { cwd, warning: null };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to prepare managed checkout for "${input.repoUrl}" at "${cwd}": ${reason}`);
+  // Clone with credentials (shallow for speed)
+  const cloneResult = await gitClone(credUrl, cwd, input.repoUrl);
+  if (!cloneResult.ok) {
+    throw new Error(`Failed to prepare managed checkout for "${input.repoUrl}" at "${cwd}": ${cloneResult.warning}`);
   }
+  return { cwd, warning: null };
+}
+
+async function getDefaultBranch(cwd: string): Promise<string> {
+  const { stdout } = await execFile("git", ["-C", cwd, "symbolic-ref", "--short", "HEAD"], { timeout: 5000 });
+  return stdout.trim() || "main";
 }
 
 const heartbeatRunListColumns = {
@@ -1466,7 +1483,7 @@ export function heartbeatService(db: Db) {
         let managedWorkspaceWarning: string | null = null;
         if (!projectCwd || projectCwd === REPO_ONLY_CWD_SENTINEL) {
           try {
-            const managedWorkspace = await ensureManagedProjectWorkspace({
+            const managedWorkspace = await ensureManagedProjectWorkspace(db, {
               companyId: agent.companyId,
               projectId: workspaceProjectId ?? resolvedProjectId ?? workspace.projectId,
               repoUrl: readNonEmptyString(workspace.repoUrl),
@@ -1538,7 +1555,7 @@ export function heartbeatService(db: Db) {
     }
 
     if (workspaceProjectId) {
-      const managedWorkspace = await ensureManagedProjectWorkspace({
+      const managedWorkspace = await ensureManagedProjectWorkspace(db, {
         companyId: agent.companyId,
         projectId: workspaceProjectId,
         repoUrl: null,
@@ -3118,6 +3135,30 @@ export function heartbeatService(db: Db) {
       if (outcome === "succeeded" && resolvedProjectId && executionWorkspace.cwd) {
         syncWorkspaceToS3(agent.companyId, resolvedProjectId, executionWorkspace.cwd).catch((syncErr) => {
           logger.warn({ err: syncErr, projectId: resolvedProjectId }, "workspace S3 sync failed (non-fatal)");
+        });
+      }
+
+      // Git commit + merge + push after successful run
+      if (outcome === "succeeded" && executionWorkspace.cwd && executionWorkspace.repoUrl) {
+        const github = githubAppService(db);
+        const credUrl = await github.getCredentialUrl(agent.companyId, executionWorkspace.repoUrl).catch(() => executionWorkspace.repoUrl!);
+        const branch = executionWorkspace.branchName ?? "main";
+        const baseBranch = executionWorkspace.repoRef ?? "main";
+        gitCommitMergeAndPush({
+          cwd: executionWorkspace.cwd,
+          credUrl,
+          cleanUrl: executionWorkspace.repoUrl,
+          branch,
+          baseBranch,
+          commitMessage: `${agent.name}: ${issueRef?.title ?? 'completed task'}`,
+        }).then((result) => {
+          if (result.warning) {
+            logger.info({ warning: result.warning, branch, baseBranch }, "git push completed with warning");
+          } else if (result.ok) {
+            logger.info({ branch, baseBranch }, "git commit+merge+push succeeded");
+          }
+        }).catch((pushErr) => {
+          logger.warn({ err: pushErr, branch }, "git commit+merge+push failed (non-fatal)");
         });
       }
     } catch (err) {
