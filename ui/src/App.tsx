@@ -1,9 +1,11 @@
+import { useState, useEffect, useRef } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Layout } from "./components/Layout";
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import { authApi } from "./api/auth";
+import { setBoardToken, getBoardToken } from "./api/client";
 import { healthApi } from "./api/health";
 import { Dashboard } from "./pages/Dashboard";
 import { Companies } from "./pages/Companies";
@@ -93,7 +95,23 @@ function CloudAccessGate() {
     retry: false,
   });
 
-  if (healthQuery.isLoading || (isAuthenticatedMode && sessionQuery.isLoading)) {
+  const [exchanging, setExchanging] = useState(false);
+  const exchangeAttempted = useRef(false);
+
+  useEffect(() => {
+    if (sessionQuery.data && !getBoardToken() && !exchanging && !exchangeAttempted.current) {
+      exchangeAttempted.current = true;
+      setExchanging(true);
+      authApi.exchangeSessionForKey().then((result) => {
+        setBoardToken(result.token);
+        setExchanging(false);
+      }).catch(() => {
+        setExchanging(false);
+      });
+    }
+  }, [sessionQuery.data, exchanging]);
+
+  if (healthQuery.isLoading || (isAuthenticatedMode && (sessionQuery.isLoading || exchanging))) {
     return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading...</div>;
   }
 
@@ -325,7 +343,9 @@ export function App() {
             <Route path="plugins/:pluginId" element={<PluginSettings />} />
             <Route path="adapters" element={<AdapterManager />} />
           </Route>
-          <Route path="companies" element={<UnprefixedBoardRedirect />} />
+          <Route path="companies" element={<Layout />}>
+            <Route index element={<Companies />} />
+          </Route>
           <Route path="issues" element={<UnprefixedBoardRedirect />} />
           <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
           <Route path="routines" element={<UnprefixedBoardRedirect />} />
