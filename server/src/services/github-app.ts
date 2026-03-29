@@ -126,6 +126,21 @@ export interface GitHubAppService {
 
   /** Create a repo under the default org for a company/project */
   createDefaultRepo(companyId: string, repoName: string): Promise<{ fullName: string; cloneUrl: string; private: boolean }>;
+
+  /** Delete a GitHub repo by full name (e.g. "org/repo"). Non-fatal. */
+  deleteRepo(companyId: string, repoFullName: string): Promise<void>;
+
+  /** Rename a GitHub repo. Returns new clone URL or null on failure. */
+  renameRepo(companyId: string, repoFullName: string, newName: string): Promise<string | null>;
+
+  /** Derive the repo name for a company/project (without creating it) */
+  deriveRepoName(companyId: string, projectName: string): string;
+
+  /** Parse "org/repo" from a clone URL. Returns null if unparseable. */
+  parseRepoFullName(cloneUrl: string): string | null;
+
+  /** Check if a clone URL points to a repo managed by this instance */
+  isManagedRepo(cloneUrl: string, companyId: string): boolean;
 }
 
 export function githubAppService(db: Db): GitHubAppService {
@@ -287,11 +302,9 @@ export function githubAppService(db: Db): GitHubAppService {
     }
   }
 
-  async function createDefaultRepo(
-    companyId: string,
-    repoName: string,
-  ): Promise<{ fullName: string; cloneUrl: string; private: boolean }> {
-    // Resolve auth token: GitHub App installation > PAT
+  // --- Shared helpers ---
+
+  async function resolveAuthToken(companyId: string): Promise<string | null> {
     let authToken: string | null = null;
     try {
       const tokenResult = await getInstallationToken(companyId);
@@ -303,15 +316,54 @@ export function githubAppService(db: Db): GitHubAppService {
       const pat = process.env.GITHUB_PAT;
       if (pat) authToken = pat;
     }
-    if (!authToken) throw new Error("No GitHub credentials available (need App installation or GITHUB_PAT)");
+    return authToken;
+  }
 
-    const org = config?.defaultOrg ?? process.env.GITHUB_APP_DEFAULT_ORG ?? "AIOTNetwork";
+  function getDefaultOrg(): string {
+    return config?.defaultOrg ?? process.env.GITHUB_APP_DEFAULT_ORG ?? "AIOTNetwork";
+  }
+
+  function deriveRepoName(companyId: string, projectName: string): string {
     const instanceId = resolvePaperclipInstanceId();
     const companyShort = companyId.slice(0, 8);
-    const safeProject = repoName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
-    // Format: {instance}-{companyPrefix}-{project} → prevents collisions across envs and companies
-    // e.g. "prod-a1b2c3d4-idphoto", "dev-e5f6g7h8-idphoto"
-    const safeName = `${instanceId}-${companyShort}-${safeProject}`.slice(0, 100);
+    const safeProject = projectName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
+    return `${instanceId}-${companyShort}-${safeProject}`.slice(0, 100);
+  }
+
+  function parseRepoFullName(cloneUrl: string): string | null {
+    try {
+      const url = new URL(cloneUrl);
+      const match = url.pathname.match(/^\/([^/]+\/[^/]+?)(?:\.git)?$/);
+      return match?.[1] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  function isManagedRepo(cloneUrl: string, companyId: string): boolean {
+    const fullName = parseRepoFullName(cloneUrl);
+    if (!fullName) return false;
+    const [org, repoName] = fullName.split("/");
+    if (!org || !repoName) return false;
+    if (org !== getDefaultOrg()) return false;
+    const instanceId = resolvePaperclipInstanceId();
+    const companyShort = companyId.slice(0, 8);
+    return repoName.startsWith(`${instanceId}-${companyShort}-`);
+  }
+
+  // --- CRUD ---
+
+  async function createDefaultRepo(
+    companyId: string,
+    repoName: string,
+  ): Promise<{ fullName: string; cloneUrl: string; private: boolean }> {
+    const authToken = await resolveAuthToken(companyId);
+    if (!authToken) throw new Error("No GitHub credentials available (need App installation or GITHUB_PAT)");
+
+    const org = getDefaultOrg();
+    const safeName = deriveRepoName(companyId, repoName);
+    const instanceId = resolvePaperclipInstanceId();
+    const companyShort = companyId.slice(0, 8);
 
     const res = await fetch(`${GITHUB_API}/orgs/${org}/repos`, {
       method: "POST",
@@ -323,7 +375,7 @@ export function githubAppService(db: Db): GitHubAppService {
       body: JSON.stringify({
         name: safeName,
         private: true,
-        auto_init: true, // creates with README so it has a default branch
+        auto_init: true,
         description: `Managed by AgentsInc (${instanceId}) for company ${companyShort}, project: ${repoName}`,
       }),
     });
@@ -341,6 +393,46 @@ export function githubAppService(db: Db): GitHubAppService {
     };
   }
 
+  async function deleteRepo(companyId: string, repoFullName: string): Promise<void> {
+    const authToken = await resolveAuthToken(companyId);
+    if (!authToken) return;
+    try {
+      const res = await fetch(`${GITHUB_API}/repos/${repoFullName}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${authToken}`, Accept: "application/vnd.github+json" },
+      });
+      if (res.ok || res.status === 404) return;
+      logger.warn({ status: res.status, repoFullName }, "GitHub repo deletion failed");
+    } catch (err) {
+      logger.warn({ err, repoFullName }, "GitHub repo deletion error");
+    }
+  }
+
+  async function renameRepo(companyId: string, repoFullName: string, newName: string): Promise<string | null> {
+    const authToken = await resolveAuthToken(companyId);
+    if (!authToken) return null;
+    try {
+      const res = await fetch(`${GITHUB_API}/repos/${repoFullName}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          Accept: "application/vnd.github+json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (!res.ok) {
+        logger.warn({ status: res.status, repoFullName, newName }, "GitHub repo rename failed");
+        return null;
+      }
+      const data = await res.json() as { clone_url: string };
+      return data.clone_url;
+    } catch (err) {
+      logger.warn({ err, repoFullName, newName }, "GitHub repo rename error");
+      return null;
+    }
+  }
+
   return {
     enabled,
     getInstallationId,
@@ -351,5 +443,10 @@ export function githubAppService(db: Db): GitHubAppService {
     getInstallation,
     listRepos,
     createDefaultRepo,
+    deleteRepo,
+    renameRepo,
+    deriveRepoName,
+    parseRepoFullName,
+    isManagedRepo,
   };
 }
