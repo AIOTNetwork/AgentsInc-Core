@@ -255,8 +255,26 @@ export function companyService(db: Db) {
         return enrichCompany(hydrated);
       }),
 
-    remove: (id: string) =>
-      db.transaction(async (tx) => {
+    remove: async (id: string) => {
+      // Delete managed GitHub repos before cascade (fire-and-forget)
+      try {
+        const { githubAppService } = await import("./github-app.js");
+        const { projectWorkspaces } = await import("@paperclipai/db");
+        const github = githubAppService(db);
+        const workspaces = await db
+          .select({ repoUrl: projectWorkspaces.repoUrl })
+          .from(projectWorkspaces)
+          .where(eq(projectWorkspaces.companyId, id));
+        for (const ws of workspaces) {
+          if (!ws.repoUrl || !github.isManagedRepo(ws.repoUrl, id)) continue;
+          const fullName = github.parseRepoFullName(ws.repoUrl);
+          if (fullName) await github.deleteRepo(id, fullName);
+        }
+      } catch (err) {
+        console.warn("[companies] GitHub repo cleanup on delete failed:", err instanceof Error ? err.message : err);
+      }
+
+      return db.transaction(async (tx) => {
         // Delete ALL referencing rows via raw SQL for reliability.
         // Drizzle delete doesn't handle deep FK chains well, and manually
         // tracking every table is error-prone. This uses a CTE approach
@@ -320,7 +338,8 @@ export function companyService(db: Db) {
           }
         }
         return null;
-      }),
+      });
+    },
 
     stats: () =>
       Promise.all([
