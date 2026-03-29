@@ -528,6 +528,18 @@ export function projectRoutes(db: Db) {
     if (!project) throw notFound("Project not found");
     assertCompanyAccess(req, project.companyId);
 
+    // Check for Dockerfile in workspace before creating snapshot
+    const wsDir = resolveWorkspaceDir(project);
+    if (wsDir && !fsSync.existsSync(path.join(wsDir, "Dockerfile"))) {
+      res.status(422).json({
+        error: "no_dockerfile",
+        message: "Project has no Dockerfile. A Dockerfile is required to deploy a preview.",
+        projectId: project.id,
+        projectName: project.name,
+      });
+      return;
+    }
+
     try {
       const result = await createWorkspaceSnapshot(project);
       res.json(result);
