@@ -29,6 +29,11 @@ const CATALOG_SOURCES = [
 
 let catalogCache: AgencyCatalogEntry[] | null = null;
 
+/** Invalidate the in-memory catalog cache (e.g. after templates are moved/added). */
+export function invalidateAgencyCatalogCache(): void {
+  catalogCache = null;
+}
+
 /**
  * Load and merge catalog.json from all onboarding asset sources.
  */

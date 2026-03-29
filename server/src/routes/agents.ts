@@ -1881,6 +1881,76 @@ export function agentRoutes(db: Db) {
     res.json(result.bundle);
   });
 
+  // ---- Apply a catalog template to an existing agent ----
+  router.post("/agents/:id/apply-template", async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    await assertCanManageInstructionsPath(req, existing);
+
+    const bundlePath = typeof req.body?.bundlePath === "string" ? req.body.bundlePath.trim() : "";
+    if (!bundlePath) {
+      res.status(422).json({ error: "bundlePath is required (e.g. 'aiot-agents/leadership/leadership-cto')" });
+      return;
+    }
+
+    const { loadAgencyBundle, findCatalogEntry } = await import("../services/agency-catalog.js");
+    const bundle = await loadAgencyBundle(bundlePath);
+    if (!bundle || Object.keys(bundle).length === 0) {
+      res.status(404).json({ error: `Template not found at '${bundlePath}'` });
+      return;
+    }
+
+    // Write each file in the bundle to the agent's instructions
+    const writtenFiles: string[] = [];
+    for (const [fileName, content] of Object.entries(bundle)) {
+      await instructions.writeFile(existing, fileName, content, {
+        clearLegacyPromptTemplate: fileName === "AGENTS.md",
+      });
+      writtenFiles.push(fileName);
+    }
+
+    // Refresh the agent to get latest adapterConfig after writes
+    const refreshed = await svc.getById(id);
+    if (refreshed) {
+      const normalizedAdapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
+        existing.companyId,
+        refreshed.adapterConfig as Record<string, unknown>,
+        { strictMode: strictSecretsMode },
+      );
+      await svc.update(id, { adapterConfig: normalizedAdapterConfig });
+    }
+
+    const entry = await findCatalogEntry(bundlePath);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: existing.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "agent.template_applied",
+      entityType: "agent",
+      entityId: existing.id,
+      details: {
+        bundlePath,
+        templateName: entry?.name ?? bundlePath,
+        files: writtenFiles,
+      },
+    });
+
+    res.json({
+      applied: true,
+      bundlePath,
+      templateName: entry?.name ?? null,
+      files: writtenFiles,
+      desiredSkills: entry?.desiredSkills ?? [],
+    });
+  });
+
   router.patch("/agents/:id", validate(updateAgentSchema), async (req, res) => {
     const id = req.params.id as string;
     const existing = await svc.getById(id);
