@@ -154,16 +154,19 @@ async function createSnapshotFromLocalDir(
       body: tarBuffer,
     });
 
-    if (!storage.getSignedUrl) {
-      throw unprocessable("Storage provider does not support presigned URLs. Use S3/MinIO storage.");
-    }
-
     const expiresInSeconds = 900; // 15 minutes
-    const signedUrl = await storage.getSignedUrl(
-      project.companyId,
-      putResult.objectKey,
-      expiresInSeconds,
-    );
+    let signedUrl: string;
+
+    if (storage.getSignedUrl) {
+      signedUrl = await storage.getSignedUrl(
+        project.companyId,
+        putResult.objectKey,
+        expiresInSeconds,
+      );
+    } else {
+      // Local disk storage — serve via the download endpoint
+      signedUrl = `/api/projects/${project.id}/workspace/snapshot/download?key=${encodeURIComponent(putResult.objectKey)}`;
+    }
 
     // Also sync to S3 for future cloud access
     const sync = getWorkspaceS3Sync();

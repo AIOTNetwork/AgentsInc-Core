@@ -541,6 +541,29 @@ export function projectRoutes(db: Db) {
     }
   });
 
+  // --- Workspace Snapshot Download (for local disk storage without presigned URLs) ---
+
+  router.get("/projects/:id/workspace/snapshot/download", async (req, res) => {
+    const project = await svc.getById(req.params.id);
+    if (!project) throw notFound("Project not found");
+    assertCompanyAccess(req, project.companyId);
+
+    const objectKey = typeof req.query.key === "string" ? req.query.key : null;
+    if (!objectKey) { res.status(400).json({ error: "key is required" }); return; }
+
+    const { getStorageService } = await import("../storage/index.js");
+    const storage = getStorageService();
+    try {
+      const result = await storage.getObject(project.companyId, objectKey);
+      res.setHeader("Content-Type", result.contentType ?? "application/gzip");
+      if (result.contentLength) res.setHeader("Content-Length", String(result.contentLength));
+      res.setHeader("Content-Disposition", "attachment; filename=snapshot.tar.gz");
+      result.stream.pipe(res);
+    } catch {
+      res.status(404).json({ error: "snapshot not found" });
+    }
+  });
+
   // --- Workspace Sync (upload tar.gz to S3 for cloud previews) ---
 
   const workspaceSyncUpload = multer({
