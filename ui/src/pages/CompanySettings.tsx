@@ -1,5 +1,5 @@
 import { ChangeEvent, useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION } from "@paperclipai/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -7,9 +7,10 @@ import { useToast } from "../context/ToastContext";
 import { companiesApi } from "../api/companies";
 import { accessApi } from "../api/access";
 import { assetsApi } from "../api/assets";
+import { githubApi } from "../api/github";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { Settings, Check, Download, Upload } from "lucide-react";
+import { Settings, Check, Download, Upload, Github, ExternalLink, Unplug } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import {
   Field,
@@ -563,6 +564,9 @@ export function CompanySettings() {
         </div>
       </div>
 
+      {/* GitHub Integration */}
+      <GitHubIntegrationSection companyId={selectedCompanyId!} />
+
       {/* Danger Zone */}
       <div className="space-y-4">
         <div className="text-xs font-medium text-destructive uppercase tracking-wide">
@@ -614,6 +618,137 @@ export function CompanySettings() {
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function GitHubIntegrationSection({ companyId }: { companyId: string }) {
+  const queryClient = useQueryClient();
+
+  const { data: status, isLoading } = useQuery({
+    queryKey: queryKeys.github.status(companyId),
+    queryFn: () => githubApi.getStatus(companyId),
+    enabled: !!companyId,
+  });
+
+  // Handle callback redirect (after GitHub App installation)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("github") === "connected") {
+      queryClient.invalidateQueries({ queryKey: queryKeys.github.status(companyId) });
+      // Clean up URL
+      params.delete("github");
+      params.delete("companyId");
+      const clean = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (clean ? `?${clean}` : ""));
+    }
+  }, [companyId, queryClient]);
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => githubApi.disconnect(companyId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.github.status(companyId) });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          GitHub Integration
+        </div>
+        <div className="rounded-md border border-border px-4 py-4">
+          <span className="text-sm text-muted-foreground">Loading...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // GitHub App not configured on the server
+  if (status && !status.enabled) {
+    return (
+      <div className="space-y-4">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          GitHub Integration
+        </div>
+        <div className="rounded-md border border-border px-4 py-4">
+          <p className="text-sm text-muted-foreground">
+            GitHub App is not configured on this instance. Public repositories can still be used without authentication.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const isConnected = status?.connected && !status?.isDefault;
+
+  return (
+    <div className="space-y-4">
+      <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+        GitHub Integration
+      </div>
+      <div className="space-y-3 rounded-md border border-border px-4 py-4">
+        {isConnected ? (
+          <>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-600">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                Connected
+              </div>
+              <span className="text-sm text-muted-foreground">
+                {status.accountType === "Organization" ? "Org" : "User"}:{" "}
+                <span className="font-medium text-foreground">{status.account}</span>
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Agents can clone, read, and push to private repositories accessible by this installation.
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const confirmed = window.confirm(
+                    "Disconnect GitHub? Agents will no longer be able to access private repos through this installation."
+                  );
+                  if (confirmed) disconnectMutation.mutate();
+                }}
+                disabled={disconnectMutation.isPending}
+              >
+                <Unplug className="mr-1.5 h-3.5 w-3.5" />
+                {disconnectMutation.isPending ? "Disconnecting..." : "Disconnect"}
+              </Button>
+              {disconnectMutation.isError && (
+                <span className="text-xs text-destructive">
+                  {disconnectMutation.error instanceof Error
+                    ? disconnectMutation.error.message
+                    : "Failed to disconnect"}
+                </span>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <Github className="h-5 w-5 text-muted-foreground" />
+              <span className="text-sm font-medium">Connect GitHub App</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Install the GitHub App to let agents access your private repositories.
+              Public repositories work without installation.
+            </p>
+            <Button
+              size="sm"
+              asChild
+            >
+              <a href={githubApi.getInstallUrl(companyId)}>
+                <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                Install GitHub App
+              </a>
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

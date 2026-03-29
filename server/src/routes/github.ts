@@ -72,8 +72,8 @@ export function githubRoutes(db: Db) {
       }
     }
 
-    // Redirect back to the UI
-    const redirectUrl = process.env.GITHUB_CALLBACK_REDIRECT_URL ?? "/";
+    // Redirect back to the UI — default to company settings page
+    const redirectUrl = process.env.GITHUB_CALLBACK_REDIRECT_URL ?? "/company/settings";
     res.redirect(`${redirectUrl}?github=connected&companyId=${companyId ?? ""}`);
   });
 

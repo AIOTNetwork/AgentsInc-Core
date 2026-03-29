@@ -6,6 +6,7 @@ import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
 import { goalsApi } from "../api/goals";
 import { assetsApi } from "../api/assets";
+import { githubApi } from "../api/github";
 import { queryKeys } from "../lib/queryKeys";
 import {
   Dialog,
@@ -25,6 +26,8 @@ import {
   Plus,
   X,
   HelpCircle,
+  AlertTriangle,
+  Info,
 } from "lucide-react";
 import {
   Tooltip,
@@ -91,6 +94,15 @@ export function NewProjectDialog() {
     }
     return options;
   }, [agents]);
+
+  const { data: githubStatus } = useQuery({
+    queryKey: queryKeys.github.status(selectedCompanyId!),
+    queryFn: () => githubApi.getStatus(selectedCompanyId!),
+    enabled: !!selectedCompanyId && newProjectOpen,
+  });
+
+  const hasGithubApp = githubStatus?.connected && !githubStatus?.isDefault;
+  const showGithubWarning = !!workspaceRepoUrl.trim() && isGitHubRepoUrl(workspaceRepoUrl.trim()) && !hasGithubApp;
 
   const createProject = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
@@ -302,6 +314,30 @@ export function NewProjectDialog() {
               onChange={(e) => { setWorkspaceRepoUrl(e.target.value); setWorkspaceError(null); }}
               placeholder="https://github.com/org/repo"
             />
+            {showGithubWarning && (
+              <div className="mt-1.5 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1.5">
+                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                <div className="text-xs text-amber-700 dark:text-amber-400">
+                  <span className="font-medium">No GitHub App installed.</span>{" "}
+                  Public repos will work, but agents cannot push to private repos.{" "}
+                  <a
+                    href="/company/settings"
+                    className="underline hover:text-amber-900 dark:hover:text-amber-300"
+                  >
+                    Install GitHub App
+                  </a>{" "}
+                  for private repo access.
+                </div>
+              </div>
+            )}
+            {workspaceRepoUrl.trim() && isGitHubRepoUrl(workspaceRepoUrl.trim()) && hasGithubApp && (
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <Info className="h-3 w-3 shrink-0 text-green-500" />
+                <span className="text-xs text-green-600 dark:text-green-400">
+                  GitHub App connected — private repo access available
+                </span>
+              </div>
+            )}
           </div>
 
           <div>

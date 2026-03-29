@@ -131,6 +131,10 @@ export const queryKeys = {
   liveRuns: (companyId: string) => ["live-runs", companyId] as const,
   runIssues: (runId: string) => ["run-issues", runId] as const,
   org: (companyId: string) => ["org", companyId] as const,
+  github: {
+    status: (companyId: string) => ["github", "status", companyId] as const,
+    repos: (companyId: string) => ["github", "repos", companyId] as const,
+  },
   skills: {
     available: ["skills", "available"] as const,
   },
