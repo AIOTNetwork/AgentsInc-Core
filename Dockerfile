@@ -56,24 +56,20 @@ COPY --from=deps /app /app
 # Root tsconfigs needed by all packages that extend them
 COPY tsconfig.json tsconfig.base.json ./
 
-# Copy shared packages first (dependencies of ui and server)
-COPY packages/shared/ packages/shared/
-COPY packages/db/ packages/db/
-COPY packages/adapter-utils/ packages/adapter-utils/
-COPY packages/plugins/sdk/ packages/plugins/sdk/
+# Copy all packages (UI and server both depend on shared, adapters, etc.)
+COPY packages/ packages/
 
 # Build shared first, then plugin-sdk (which depends on shared's dist/)
 RUN pnpm --filter @paperclipai/shared build
 RUN pnpm --filter @paperclipai/plugin-sdk build
 
-# Copy and build UI (only rebuilds when ui/ source changes)
+# Copy and build UI
 COPY ui/ ui/
 RUN pnpm --filter @paperclipai/ui build
 
-# Copy and build server (only rebuilds when server/ source changes)
+# Copy and build server
 COPY server/ server/
 COPY cli/ cli/
-COPY packages/adapters/ packages/adapters/
 COPY skills/ skills/
 RUN pnpm --filter @paperclipai/server build
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
