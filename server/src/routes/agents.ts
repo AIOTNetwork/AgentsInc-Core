@@ -549,13 +549,15 @@ export function agentRoutes(db: Db) {
     }
 
     const adapterConfig = asRecord(agent.adapterConfig) ?? {};
-    const hasExplicitInstructionsBundle =
-      Boolean(asNonEmptyString(adapterConfig.instructionsBundleMode))
-      || Boolean(asNonEmptyString(adapterConfig.instructionsRootPath))
+    // Skip only if the bundle is actually materialized (has a rootPath or explicit file path).
+    // instructionsBundleMode alone without rootPath means the bundle flag was set but
+    // no files were written — we should still materialize.
+    const hasActualInstructionsBundle =
+      Boolean(asNonEmptyString(adapterConfig.instructionsRootPath))
       || Boolean(asNonEmptyString(adapterConfig.instructionsEntryFile))
       || Boolean(asNonEmptyString(adapterConfig.instructionsFilePath))
       || Boolean(asNonEmptyString(adapterConfig.agentsMdPath));
-    if (hasExplicitInstructionsBundle) {
+    if (hasActualInstructionsBundle) {
       return agent;
     }
 
