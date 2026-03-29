@@ -159,17 +159,33 @@ export function githubAppService(db: Db): GitHubAppService {
   }
 
   async function getCredentialUrl(companyId: string, repoUrl: string): Promise<string> {
+    // 1. Try GitHub App installation token (company-specific or default)
     const token = await getInstallationToken(companyId);
-    if (!token) return repoUrl;
-
-    try {
-      const url = new URL(repoUrl);
-      url.username = "x-access-token";
-      url.password = token.token;
-      return url.toString();
-    } catch {
-      return repoUrl;
+    if (token) {
+      try {
+        const url = new URL(repoUrl);
+        url.username = "x-access-token";
+        url.password = token.token;
+        return url.toString();
+      } catch {
+        return repoUrl;
+      }
     }
+
+    // 2. Fall back to GITHUB_PAT if set (org-wide PAT for AgentsInc repos)
+    const pat = process.env.GITHUB_PAT;
+    if (pat) {
+      try {
+        const url = new URL(repoUrl);
+        url.username = "x-access-token";
+        url.password = pat;
+        return url.toString();
+      } catch {
+        return repoUrl;
+      }
+    }
+
+    return repoUrl;
   }
 
   async function saveInstallation(companyId: string, data: {

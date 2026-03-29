@@ -86,20 +86,23 @@ export function githubRoutes(db: Db) {
     }
     assertCompanyAccess(req, companyId);
 
+    const hasPat = !!process.env.GITHUB_PAT;
+
     if (!github.enabled) {
-      res.json({ connected: false, enabled: false });
+      res.json({ connected: false, enabled: false, hasPat });
       return;
     }
 
     const installation = await github.getInstallation(companyId);
     if (!installation) {
-      res.json({ connected: false, enabled: true });
+      res.json({ connected: false, enabled: true, hasPat });
       return;
     }
 
     res.json({
       connected: true,
       enabled: true,
+      hasPat,
       account: installation.accountLogin,
       accountType: installation.accountType,
       isDefault: installation.isDefault,
