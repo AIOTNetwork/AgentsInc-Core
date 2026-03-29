@@ -142,19 +142,38 @@ export async function resolveAgentInstructionsForHire(
     return { files: await loadDefaultAgentInstructionsBundle("ceo") };
   }
 
-  // 3. Look up agency catalog by role, pick best match by name similarity
+  // 3. Look up agency catalog: first by role, then across all entries by name similarity
   try {
     const catalog = await getAgencyCatalog();
-    const byRole = catalog.filter((e) => e.defaultRole === role);
 
+    // 3a. Try role-specific entries first
+    const byRole = catalog.filter((e) => e.defaultRole === role);
     if (byRole.length > 0) {
       const entry = pickBestMatch(byRole, name);
-      const bundle = await loadAgencyBundle(entry.bundlePath);
+      const score = scoreMatch(entry.name, entry.description, name);
+      if (score >= 30) {
+        const bundle = await loadAgencyBundle(entry.bundlePath);
+        if (bundle) {
+          return {
+            files: bundle,
+            desiredSkills: entry.desiredSkills,
+            matchedCatalogEntry: entry.bundlePath,
+          };
+        }
+      }
+    }
+
+    // 3b. No good role match — search entire catalog by name similarity
+    //     (e.g. role="engineer" name="Game Developer" → matches gamedev templates)
+    const allEntry = pickBestMatch(catalog, name);
+    const allScore = scoreMatch(allEntry.name, allEntry.description, name);
+    if (allScore >= 30) {
+      const bundle = await loadAgencyBundle(allEntry.bundlePath);
       if (bundle) {
         return {
           files: bundle,
-          desiredSkills: entry.desiredSkills,
-          matchedCatalogEntry: entry.bundlePath,
+          desiredSkills: allEntry.desiredSkills,
+          matchedCatalogEntry: allEntry.bundlePath,
         };
       }
     }
