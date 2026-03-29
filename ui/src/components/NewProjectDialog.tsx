@@ -101,6 +101,18 @@ export function NewProjectDialog() {
     enabled: !!selectedCompanyId && newProjectOpen,
   });
 
+  const isGitHubRepoUrl = (value: string) => {
+    try {
+      const parsed = new URL(value);
+      const host = parsed.hostname.toLowerCase();
+      if (host !== "github.com" && host !== "www.github.com") return false;
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      return segments.length >= 2;
+    } catch {
+      return false;
+    }
+  };
+
   const hasGithubApp = githubStatus?.connected && !githubStatus?.isDefault;
   const hasGithubPat = githubStatus?.hasPat;
   const hasGithubCredentials = hasGithubApp || hasGithubPat;
@@ -132,17 +144,6 @@ export function NewProjectDialog() {
   }
 
   const isAbsolutePath = (value: string) => value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
-
-  const looksLikeRepoUrl = (value: string) => {
-    try {
-      const parsed = new URL(value);
-      if (parsed.protocol !== "https:") return false;
-      const segments = parsed.pathname.split("/").filter(Boolean);
-      return segments.length >= 2;
-    } catch {
-      return false;
-    }
-  };
 
   const deriveWorkspaceNameFromPath = (value: string) => {
     const normalized = value.trim().replace(/[\\/]+$/, "");
