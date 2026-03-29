@@ -102,7 +102,10 @@ export function NewProjectDialog() {
   });
 
   const hasGithubApp = githubStatus?.connected && !githubStatus?.isDefault;
-  const showGithubWarning = !!workspaceRepoUrl.trim() && isGitHubRepoUrl(workspaceRepoUrl.trim()) && !hasGithubApp;
+  const hasGithubPat = githubStatus?.hasPat;
+  const hasGithubCredentials = hasGithubApp || hasGithubPat;
+  const repoUrlEntered = !!workspaceRepoUrl.trim() && isGitHubRepoUrl(workspaceRepoUrl.trim());
+  const showGithubWarning = repoUrlEntered && !hasGithubCredentials;
 
   const createProject = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
@@ -318,19 +321,28 @@ export function NewProjectDialog() {
               <div className="mt-1.5 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1.5">
                 <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
                 <div className="text-xs text-amber-700 dark:text-amber-400">
-                  <span className="font-medium">No GitHub App installed.</span>{" "}
-                  Public repos will work, but agents cannot push to private repos.{" "}
+                  <span className="font-medium">No GitHub credentials configured.</span>{" "}
+                  Agents cannot push to this repo.{" "}
                   <a
                     href="/company/settings"
                     className="underline hover:text-amber-900 dark:hover:text-amber-300"
                   >
                     Install GitHub App
                   </a>{" "}
-                  for private repo access.
+                  or set <code className="font-mono">GITHUB_PAT</code> for repo access.
                 </div>
               </div>
             )}
-            {workspaceRepoUrl.trim() && isGitHubRepoUrl(workspaceRepoUrl.trim()) && hasGithubApp && (
+            {repoUrlEntered && hasGithubPat && !hasGithubApp && (
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <Info className="h-3 w-3 shrink-0 text-blue-500" />
+                <span className="text-xs text-blue-600 dark:text-blue-400">
+                  Using org PAT — push access depends on PAT permissions.{" "}
+                  <a href="/company/settings" className="underline">Install GitHub App</a> for private repo access.
+                </span>
+              </div>
+            )}
+            {repoUrlEntered && hasGithubApp && (
               <div className="mt-1.5 flex items-center gap-1.5">
                 <Info className="h-3 w-3 shrink-0 text-green-500" />
                 <span className="text-xs text-green-600 dark:text-green-400">

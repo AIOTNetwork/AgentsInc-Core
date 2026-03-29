@@ -672,10 +672,23 @@ function GitHubIntegrationSection({ companyId }: { companyId: string }) {
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           GitHub Integration
         </div>
-        <div className="rounded-md border border-border px-4 py-4">
+        <div className="rounded-md border border-border px-4 py-4 space-y-2">
           <p className="text-sm text-muted-foreground">
-            GitHub App is not configured on this instance. Public repositories can still be used without authentication.
+            GitHub App is not configured on this instance.
           </p>
+          {status.hasPat ? (
+            <div className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+              <span className="text-xs text-blue-600 dark:text-blue-400">
+                Org PAT is configured — agents can push to repos the PAT has access to.
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Set <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">GITHUB_PAT</code> to
+              enable push access for all companies, or configure the GitHub App for fine-grained control.
+            </p>
+          )}
         </div>
       </div>
     );
@@ -734,10 +747,23 @@ function GitHubIntegrationSection({ companyId }: { companyId: string }) {
               <Github className="h-5 w-5 text-muted-foreground" />
               <span className="text-sm font-medium">Connect GitHub App</span>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Install the GitHub App to let agents access your private repositories.
-              Public repositories work without installation.
-            </p>
+            {status?.hasPat ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                  <span className="text-xs text-blue-600 dark:text-blue-400">
+                    Org PAT active — agents can push to repos the PAT has access to.
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Install the GitHub App for fine-grained private repo access per company.
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Install the GitHub App to let agents access your private repositories.
+              </p>
+            )}
             <Button
               size="sm"
               asChild
