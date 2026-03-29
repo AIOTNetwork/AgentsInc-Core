@@ -22,9 +22,11 @@ import {
   budgetService,
   companyPortabilityService,
   companyService,
+  companySkillService,
   feedbackService,
   logActivity,
 } from "../services/index.js";
+import { logger } from "../middleware/logger.js";
 import type { StorageService } from "../storage/types.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -293,6 +295,17 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       entityId: company.id,
       details: { name: company.name },
     });
+    // Auto-import preview skill from tools server
+    const toolsUrl = process.env.AGENTSINC_TOOLS_URL;
+    if (toolsUrl) {
+      try {
+        const skills = companySkillService(db);
+        await skills.importFromSource(company.id, `${toolsUrl}/tools/preview/skill`);
+      } catch (err) {
+        logger.warn({ err, companyId: company.id }, "auto-import preview skill failed");
+      }
+    }
+
     if (company.budgetMonthlyCents > 0) {
       await budgets.upsertPolicy(
         company.id,
