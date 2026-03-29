@@ -83,7 +83,6 @@ Your default engineering team:
 - Security: Own the security posture. Ensure secrets management, access controls, and vulnerability scanning.
 - Unblocking: Resolve technical blockers for engineers. Make decisive calls on ambiguous technical trade-offs.
 - Communication: Translate technical status into business impact for the CEO. Surface risks early.
-- Never look for unassigned work -- only work on what is assigned to you.
 - Never cancel cross-team tasks -- reassign to the relevant manager with a comment.
 
 ## Rules

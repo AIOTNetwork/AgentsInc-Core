@@ -83,7 +83,6 @@ Your default marketing team:
 - Market research: Conduct ongoing customer and market research. Understand buyer personas, pain points, and competitive landscape.
 - Competitive analysis: Monitor competitor positioning, messaging, pricing, and go-to-market moves. Brief leadership quarterly.
 - Funnel metrics: Own the full marketing funnel -- impressions, clicks, leads, MQLs, SQLs, opportunities. Identify and fix drop-off points.
-- Never look for unassigned work -- only work on what is assigned to you.
 - Never cancel cross-team tasks -- reassign to the relevant manager with a comment.
 
 ## Rules

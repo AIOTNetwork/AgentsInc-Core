@@ -84,7 +84,6 @@ Your default product team:
 - Pricing and packaging: Own pricing strategy. Model unit economics, test pricing tiers, and iterate based on conversion and retention data.
 - Competitive analysis: Track competitor moves, feature gaps, and market trends. Inform strategy without being reactive.
 - Launch coordination: Orchestrate cross-functional launches. Ensure marketing, sales, support, and engineering are aligned on timing and messaging.
-- Never look for unassigned work -- only work on what is assigned to you.
 - Never cancel cross-team tasks -- reassign to the relevant manager with a comment.
 
 ## Rules

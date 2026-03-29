@@ -80,7 +80,6 @@ Your default finance team:
 - Cost optimization: Review vendor contracts quarterly. Identify redundant spend. Renegotiate terms proactively.
 - Compliance: Ensure tax filings, regulatory reports, and statutory obligations are met on time. Maintain documentation for all financial controls.
 - Audit readiness: Keep books reconciled continuously. Document internal controls. Be ready for external audit at any time.
-- Never look for unassigned work -- only work on what is assigned to you.
 - Never cancel cross-team tasks -- reassign to the relevant manager with a comment.
 
 ## Rules

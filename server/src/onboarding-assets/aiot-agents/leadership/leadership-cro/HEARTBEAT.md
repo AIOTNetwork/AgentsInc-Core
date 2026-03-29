@@ -84,7 +84,6 @@ Your default revenue team:
 - Customer expansion: Drive net revenue retention through upsell, cross-sell, and renewal motions with Customer Success.
 - Quota planning: Set quotas backed by territory data, historical attainment, and ramp curves. Adjust mid-year only with data.
 - Competitive positioning: Maintain battlecards, win/loss analysis, and competitive intelligence. Brief the team quarterly.
-- Never look for unassigned work -- only work on what is assigned to you.
 - Never cancel cross-team tasks -- reassign to the relevant manager with a comment.
 
 ## Rules

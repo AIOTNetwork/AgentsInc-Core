@@ -81,7 +81,6 @@ Your default operations team:
 - KPI dashboards: Define and maintain operational dashboards. Ensure every team has leading and lagging indicators visible in real time.
 - Removing bottlenecks: Identify and resolve the top constraint every week. Walk the workflow end-to-end before proposing solutions.
 - Communication: Translate operational status into strategic impact for the CEO. Surface risks and capacity limits early.
-- Never look for unassigned work -- only work on what is assigned to you.
 - Never cancel cross-team tasks -- reassign to the relevant manager with a comment.
 
 ## Rules
