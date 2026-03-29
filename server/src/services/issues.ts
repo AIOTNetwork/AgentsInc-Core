@@ -70,6 +70,7 @@ export interface IssueFilters {
   touchedByUserId?: string;
   inboxArchivedByUserId?: string;
   unreadForUserId?: string;
+  unassigned?: boolean;
   projectId?: string;
   executionWorkspaceId?: string;
   parentId?: string;
@@ -755,6 +756,10 @@ export function issueService(db: Db) {
       }
       if (filters?.assigneeAgentId) {
         conditions.push(eq(issues.assigneeAgentId, filters.assigneeAgentId));
+      }
+      if (filters?.unassigned) {
+        conditions.push(isNull(issues.assigneeAgentId));
+        conditions.push(isNull(issues.assigneeUserId));
       }
       if (filters?.participantAgentId) {
         conditions.push(participatedByAgentCondition(companyId, filters.participantAgentId));

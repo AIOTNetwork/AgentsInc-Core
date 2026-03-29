@@ -367,6 +367,7 @@ export function issueRoutes(
       touchedByUserId,
       inboxArchivedByUserId,
       unreadForUserId,
+      unassigned: req.query.unassigned === "true" || req.query.unassigned === "1",
       projectId: req.query.projectId as string | undefined,
       executionWorkspaceId: req.query.executionWorkspaceId as string | undefined,
       parentId: req.query.parentId as string | undefined,
