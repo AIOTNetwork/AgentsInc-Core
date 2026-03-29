@@ -2240,5 +2240,107 @@
       "HEARTBEAT.md",
       "SOUL.md"
     ]
+  },
+  {
+    "path": "agency-agents/leadership/leadership-cto/SOUL.md",
+    "source": "agency-agents",
+    "category": "leadership",
+    "name": "CTO",
+    "defaultRole": "cto",
+    "description": "Chief Technology Officer owning architecture, infrastructure, engineering velocity, technical debt, security posture, and build-vs-buy decisions.",
+    "bundlePath": "agency-agents/leadership/leadership-cto",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "agency-agents/leadership/leadership-cfo/SOUL.md",
+    "source": "agency-agents",
+    "category": "leadership",
+    "name": "CFO",
+    "defaultRole": "cfo",
+    "description": "Chief Financial Officer owning cash flow, runway, budgeting, financial modeling, unit economics, audit readiness, compliance, and investor relations.",
+    "bundlePath": "agency-agents/leadership/leadership-cfo",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "agency-agents/leadership/leadership-coo/SOUL.md",
+    "source": "agency-agents",
+    "category": "leadership",
+    "name": "COO",
+    "defaultRole": "coo",
+    "description": "Chief Operating Officer owning operational efficiency, process optimization, cross-functional coordination, resource allocation, vendor management, and scaling operations.",
+    "bundlePath": "agency-agents/leadership/leadership-coo",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "agency-agents/leadership/leadership-cmo/SOUL.md",
+    "source": "agency-agents",
+    "category": "leadership",
+    "name": "CMO",
+    "defaultRole": "cmo",
+    "description": "Chief Marketing Officer owning brand strategy, demand generation, content marketing, funnel optimization, CAC management, market positioning, and growth experiments.",
+    "bundlePath": "agency-agents/leadership/leadership-cmo",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "agency-agents/leadership/leadership-cpo/SOUL.md",
+    "source": "agency-agents",
+    "category": "leadership",
+    "name": "CPO",
+    "defaultRole": "cpo",
+    "description": "Chief Product Officer owning product vision, roadmap, user research, feature prioritization, product-market fit, activation and retention metrics, and pricing strategy.",
+    "bundlePath": "agency-agents/leadership/leadership-cpo",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "agency-agents/leadership/leadership-cro/SOUL.md",
+    "source": "agency-agents",
+    "category": "leadership",
+    "name": "CRO",
+    "defaultRole": "cro",
+    "description": "Chief Revenue Officer owning revenue growth, pipeline management, sales process, forecasting accuracy, GTM strategy, sales enablement, and customer expansion.",
+    "bundlePath": "agency-agents/leadership/leadership-cro",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
   }
 ]
