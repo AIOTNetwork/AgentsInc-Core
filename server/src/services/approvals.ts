@@ -2,6 +2,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { approvalComments, approvals } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
+import { logger } from "../middleware/logger.js";
 import { redactCurrentUserText } from "../log-redaction.js";
 import { agentService } from "./agents.js";
 import { budgetService } from "./budgets.js";
@@ -161,7 +162,7 @@ export function approvalService(db: Db) {
             source: "approval",
             sourceId: id,
             approvedAt: now,
-          }).catch(() => {});
+          }).catch((err) => { logger.warn({ err }, "hire approval notification failed"); });
         }
       }
 

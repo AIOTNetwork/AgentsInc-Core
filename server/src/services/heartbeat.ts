@@ -3141,7 +3141,7 @@ export function heartbeatService(db: Db) {
       // Git commit + merge + push after successful run
       if (outcome === "succeeded" && executionWorkspace.cwd && executionWorkspace.repoUrl) {
         const github = githubAppService(db);
-        const credUrl = await github.getCredentialUrl(agent.companyId, executionWorkspace.repoUrl).catch(() => executionWorkspace.repoUrl!);
+        const credUrl = await github.getCredentialUrl(agent.companyId, executionWorkspace.repoUrl).catch((err) => { logger.warn({ err, companyId: agent.companyId }, "credential URL fetch failed, using plain repo URL"); return executionWorkspace.repoUrl!; });
         const branch = executionWorkspace.branchName ?? "main";
         const baseBranch = executionWorkspace.repoRef ?? "main";
         gitCommitMergeAndPush({
@@ -3235,11 +3235,11 @@ export function heartbeatService(db: Db) {
             error: message,
             errorCode: "adapter_failed",
             finishedAt: new Date(),
-          }).catch(() => undefined);
+          }).catch((statusErr) => { logger.error({ err: statusErr }, "failed to record run failure status"); });
           await setWakeupStatus(run.wakeupRequestId, "failed", {
             finishedAt: new Date(),
             error: message,
-          }).catch(() => undefined);
+          }).catch((statusErr) => { logger.error({ err: statusErr }, "failed to record run failure status"); });
           const failedRun = await getRun(runId).catch(() => null);
           if (failedRun) {
             // Emit a run-log event so the failure is visible in the run timeline,

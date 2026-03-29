@@ -281,7 +281,8 @@ export function githubAppService(db: Db): GitHubAppService {
         private: r.private,
         defaultBranch: r.default_branch,
       }));
-    } catch {
+    } catch (err) {
+      logger.warn({ err, companyId }, "GitHub listRepositories failed");
       return [];
     }
   }
@@ -295,8 +296,8 @@ export function githubAppService(db: Db): GitHubAppService {
     try {
       const tokenResult = await getInstallationToken(companyId);
       if (tokenResult) authToken = tokenResult.token;
-    } catch {
-      // App not configured — try PAT
+    } catch (err) {
+      logger.debug({ err, companyId }, "GitHub App token fetch failed, falling back to PAT");
     }
     if (!authToken) {
       const pat = process.env.GITHUB_PAT;

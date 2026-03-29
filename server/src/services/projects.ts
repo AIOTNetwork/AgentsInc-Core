@@ -575,8 +575,8 @@ export function projectService(db: Db) {
           const github = githubAppService(db);
           const repo = await github.createDefaultRepo(project.companyId, project.name);
           repoUrl = repo.cloneUrl;
-        } catch {
-          // No GitHub credentials — continue without repo
+        } catch (err) {
+          console.warn("[projects] GitHub repo creation failed:", err instanceof Error ? err.message : err);
         }
       }
 

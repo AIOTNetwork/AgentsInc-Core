@@ -8,6 +8,7 @@ import { getStorageService } from "../storage/index.js";
 import { createStorageProviderFromConfig } from "../storage/provider-registry.js";
 import { loadConfig } from "../config.js";
 import { unprocessable, notFound } from "../errors.js";
+import { logger } from "../middleware/logger.js";
 import { createWorkspaceS3Sync, type WorkspaceS3Sync } from "./workspace-s3-sync.js";
 
 const execFileAsync = promisify(execFile);
@@ -171,7 +172,7 @@ async function createSnapshotFromLocalDir(
     // Also sync to S3 for future cloud access
     const sync = getWorkspaceS3Sync();
     if (sync.enabled) {
-      sync.saveSnapshot(project.companyId, project.id, tarBuffer).catch(() => {});
+      sync.saveSnapshot(project.companyId, project.id, tarBuffer).catch((err) => { logger.warn({ err, companyId: project.companyId, projectId: project.id }, "S3 snapshot sync failed"); });
     }
 
     return {

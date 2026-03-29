@@ -47,6 +47,7 @@ import {
 } from "@paperclipai/adapter-utils/server-utils";
 import { notFound, unprocessable } from "../errors.js";
 import { ghFetch, gitHubApiBase, resolveRawGitHubUrl } from "./github-fetch.js";
+import { logger } from "../middleware/logger.js";
 import type { StorageService } from "../storage/types.js";
 import { accessService } from "./access.js";
 import { agentService } from "./agents.js";
@@ -2713,7 +2714,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     const apiBase = gitHubApiBase(parsed.hostname);
     const tree = await fetchJson<{ tree?: Array<{ path: string; type: string }> }>(
       `${apiBase}/repos/${parsed.owner}/${parsed.repo}/git/trees/${ref}?recursive=1`,
-    ).catch(() => ({ tree: [] }));
+    ).catch((err) => { logger.warn({ err }, "GitHub tree fetch failed, export may be incomplete"); return { tree: [] }; });
     const basePrefix = parsed.basePath ? `${parsed.basePath.replace(/^\/+|\/+$/g, "")}/` : "";
     const candidatePaths = (tree.tree ?? [])
       .filter((entry) => entry.type === "blob")
