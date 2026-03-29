@@ -8,6 +8,7 @@
  * Tokens are short-lived (1hr), generated on-demand, never stored.
  */
 import crypto from "node:crypto";
+import { resolvePaperclipInstanceId } from "../home-paths.js";
 import { eq, and } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { githubInstallations } from "@paperclipai/db";
@@ -295,7 +296,12 @@ export function githubAppService(db: Db): GitHubAppService {
     if (!tokenResult) throw new Error("No GitHub installation available");
 
     const org = config.defaultOrg;
-    const safeName = repoName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").slice(0, 100);
+    const instanceId = resolvePaperclipInstanceId();
+    const companyShort = companyId.slice(0, 8);
+    const safeProject = repoName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
+    // Format: {instance}-{companyPrefix}-{project} → prevents collisions across envs and companies
+    // e.g. "prod-a1b2c3d4-idphoto", "dev-e5f6g7h8-idphoto"
+    const safeName = `${instanceId}-${companyShort}-${safeProject}`.slice(0, 100);
 
     const res = await fetch(`${GITHUB_API}/orgs/${org}/repos`, {
       method: "POST",
@@ -308,7 +314,7 @@ export function githubAppService(db: Db): GitHubAppService {
         name: safeName,
         private: true,
         auto_init: true, // creates with README so it has a default branch
-        description: `Managed by AgentsInc for project: ${repoName}`,
+        description: `Managed by AgentsInc (${instanceId}) for company ${companyShort}, project: ${repoName}`,
       }),
     });
 
