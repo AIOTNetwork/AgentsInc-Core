@@ -1384,7 +1384,12 @@ export function agentRoutes(db: Db) {
       return;
     }
 
-    const requiresApproval = company.requireBoardApprovalForNewAgents;
+    const actor = getActorInfo(req);
+    // Auto-approve when the board hires a CEO — it's the bootstrap agent
+    const isBoardHiringCeo =
+      actor.actorType === "user" && normalizedHireInput.role === "ceo";
+    const requiresApproval =
+      company.requireBoardApprovalForNewAgents && !isBoardHiringCeo;
     const status = requiresApproval ? "pending_approval" : "idle";
     const createdAgent = await svc.create(companyId, {
       ...normalizedHireInput,
@@ -1395,7 +1400,6 @@ export function agentRoutes(db: Db) {
     const agent = await materializeDefaultInstructionsBundleForNewAgent(createdAgent);
 
     let approval: Awaited<ReturnType<typeof approvalsSvc.getById>> | null = null;
-    const actor = getActorInfo(req);
 
     if (requiresApproval) {
       const requestedAdapterType = normalizedHireInput.adapterType ?? agent.adapterType;
