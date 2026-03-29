@@ -534,9 +534,92 @@ export function projectRoutes(db: Db) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Workspace directory not found on server";
       const isNotFound = message.includes("not found") || message.includes("not a directory");
+      const errorCode = isNotFound ? "workspace_not_found" : "snapshot_failed";
+
+      // Check for missing Dockerfile
+      const wsDir = resolveWorkspaceDir(project);
+      const hasDockerfile = wsDir ? fsSync.existsSync(path.join(wsDir, "Dockerfile")) : false;
+
+      // Auto-create a detailed issue and assign to the CEO agent
+      let issueId: string | null = null;
+      try {
+        const { agents: agentsTable } = await import("@paperclipai/db");
+        const { eq, and } = await import("drizzle-orm");
+        const issueSvc = (await import("../services/index.js")).issueService(db);
+
+        // Find existing open preview issue for this project
+        const existingIssues = await issueSvc.list(project.companyId, { projectId: project.id });
+        const alreadyHasPreviewIssue = existingIssues.some(
+          (i) => i.title.includes("preview") && i.status !== "done" && i.status !== "cancelled",
+        );
+
+        if (!alreadyHasPreviewIssue) {
+          // Find the CEO agent for this company
+          const ceoAgent = await db
+            .select({ id: agentsTable.id })
+            .from(agentsTable)
+            .where(and(eq(agentsTable.companyId, project.companyId), eq(agentsTable.role, "ceo")))
+            .then((rows) => rows[0] ?? null);
+
+          const descriptionParts = [
+            `## Preview Snapshot Failed`,
+            ``,
+            `**Project:** ${project.name}`,
+            `**Error:** \`${errorCode}\``,
+            `**Details:** ${message}`,
+            ``,
+            `## Diagnosis`,
+            `- Workspace directory: ${wsDir ?? "not found"}`,
+            `- Dockerfile present: ${hasDockerfile ? "yes" : "**no**"}`,
+          ];
+
+          if (!hasDockerfile) {
+            descriptionParts.push(
+              ``,
+              `## Action Required`,
+              `This project needs a \`Dockerfile\` to enable live previews.`,
+              ``,
+              `Create a \`Dockerfile\` in the project root that:`,
+              `- Installs dependencies`,
+              `- Builds the application (if needed)`,
+              `- Exposes the correct port`,
+              `- Binds to \`0.0.0.0\` (not localhost)`,
+              `- Uses a lightweight base image (alpine preferred)`,
+            );
+          } else if (isNotFound) {
+            descriptionParts.push(
+              ``,
+              `## Action Required`,
+              `The workspace directory could not be found or is not a valid directory.`,
+              `Verify the project's local folder configuration points to an existing directory.`,
+            );
+          } else {
+            descriptionParts.push(
+              ``,
+              `## Action Required`,
+              `The snapshot creation failed. Investigate the error above and fix the underlying issue.`,
+            );
+          }
+
+          const created = await issueSvc.create(project.companyId, {
+            title: `Fix preview deployment for "${project.name}"`,
+            projectId: project.id,
+            priority: "high",
+            status: "todo",
+            description: descriptionParts.join("\n"),
+            ...(ceoAgent ? { assigneeAgentId: ceoAgent.id } : {}),
+          });
+          issueId = created.id;
+        }
+      } catch (issueErr) {
+        console.warn("[preview] Failed to create preview issue:", issueErr);
+      }
+
       res.status(isNotFound ? 404 : 422).json({
-        error: isNotFound ? "workspace_not_found" : "snapshot_failed",
+        error: errorCode,
         message,
+        ...(!hasDockerfile && { hint: "no_dockerfile" }),
+        ...(issueId && { issueId }),
       });
     }
   });
