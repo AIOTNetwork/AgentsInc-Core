@@ -127,7 +127,27 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
       ...(hasMagicLink
         ? [
           magicLink({
-            sendMagicLink: async ({ email, url }: { email: string; url: string }) => {
+            sendMagicLink: async ({ email, url: rawUrl }: { email: string; url: string }, ctx: any) => {
+              // Rewrite the verification URL origin to match the requester's origin
+              // so the magic link goes through the same proxy (e.g. Office's Caddy)
+              // and the session cookie is set on the correct domain.
+              // X-Forwarded-Origin is set by Caddy before it rewrites Origin for CSRF.
+              let url = rawUrl;
+              try {
+                const reqOrigin =
+                  ctx?.headers?.get?.("x-forwarded-origin") ||
+                  ctx?.headers?.get?.("origin") ||
+                  (ctx?.headers?.get?.("referer") ? new URL(ctx.headers.get("referer")).origin : null);
+                if (reqOrigin && reqOrigin !== new URL(rawUrl).origin) {
+                  const parsed = new URL(rawUrl);
+                  const originUrl = new URL(reqOrigin);
+                  parsed.protocol = originUrl.protocol;
+                  parsed.host = originUrl.host;
+                  url = parsed.toString();
+                }
+              } catch {
+                // Fallback to original URL
+              }
               const mg = new Mailgun(FormData);
               const client = mg.client({
                 username: "api",
