@@ -677,16 +677,21 @@ function GitHubIntegrationSection({ companyId }: { companyId: string }) {
             GitHub App is not configured on this instance.
           </p>
           {status.hasPat ? (
-            <div className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-              <span className="text-xs text-blue-600 dark:text-blue-400">
-                Org PAT is configured — agents can push to repos the PAT has access to.
-              </span>
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                <span className="text-xs text-blue-600 dark:text-blue-400">
+                  Code will be synced to AgentsInc GitHub by default.
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                To sync to your own GitHub repos, configure the GitHub App on this instance.
+              </p>
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">
               Set <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">GITHUB_PAT</code> to
-              enable push access for all companies, or configure the GitHub App for fine-grained control.
+              enable push access, or configure the GitHub App for fine-grained control.
             </p>
           )}
         </div>
@@ -752,11 +757,11 @@ function GitHubIntegrationSection({ companyId }: { companyId: string }) {
                 <div className="flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
                   <span className="text-xs text-blue-600 dark:text-blue-400">
-                    Org PAT active — agents can push to repos the PAT has access to.
+                    Code will be synced to AgentsInc GitHub by default.
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Install the GitHub App for fine-grained private repo access per company.
+                  Install the GitHub App to sync to your own GitHub repos instead.
                 </p>
               </div>
             ) : (

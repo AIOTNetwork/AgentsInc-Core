@@ -334,12 +334,13 @@ export function NewProjectDialog() {
               </div>
             )}
             {repoUrlEntered && hasGithubPat && !hasGithubApp && (
-              <div className="mt-1.5 flex items-center gap-1.5">
-                <Info className="h-3 w-3 shrink-0 text-blue-500" />
-                <span className="text-xs text-blue-600 dark:text-blue-400">
-                  Using org PAT — push access depends on PAT permissions.{" "}
-                  <a href="/company/settings" className="underline">Install GitHub App</a> for private repo access.
-                </span>
+              <div className="mt-1.5 flex items-start gap-1.5 rounded border border-blue-500/30 bg-blue-500/5 px-2 py-1.5">
+                <Info className="mt-0.5 h-3 w-3 shrink-0 text-blue-500" />
+                <div className="text-xs text-blue-700 dark:text-blue-400">
+                  Code will be synced to <span className="font-medium">AgentsInc GitHub</span>.
+                  To sync to your own GitHub repo,{" "}
+                  <a href="/company/settings" className="underline hover:text-blue-900 dark:hover:text-blue-300">install the GitHub App</a>.
+                </div>
               </div>
             )}
             {repoUrlEntered && hasGithubApp && (
