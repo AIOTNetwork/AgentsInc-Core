@@ -188,13 +188,11 @@ export function NewProjectDialog() {
         ...(targetDate ? { targetDate } : {}),
       });
 
-      {
+      if (localPath || repoUrl) {
         const workspacePayload: Record<string, unknown> = {
           name: localPath
             ? deriveWorkspaceNameFromPath(localPath)
-            : repoUrl
-              ? deriveWorkspaceNameFromRepo(repoUrl)
-              : name.trim(),
+            : deriveWorkspaceNameFromRepo(repoUrl),
           ...(localPath ? { cwd: localPath } : {}),
           ...(repoUrl ? { repoUrl } : {}),
         };

@@ -99,8 +99,23 @@ export function projectRoutes(db: Db) {
         return;
       }
       createdWorkspaceId = createdWorkspace.id;
+    } else {
+      // Auto-create a workspace with a GitHub repo when none provided
+      try {
+        const { githubAppService } = await import("../services/github-app.js");
+        const github = githubAppService(db);
+        const repo = await github.createDefaultRepo(companyId, project.name);
+        const createdWorkspace = await svc.createWorkspace(project.id, {
+          name: project.name,
+          repoUrl: repo.cloneUrl,
+        });
+        if (createdWorkspace) createdWorkspaceId = createdWorkspace.id;
+        console.log(`[projects] Auto-created workspace with repo ${repo.fullName} for project "${project.name}"`);
+      } catch (err) {
+        console.warn("[projects] Auto-workspace creation failed:", err instanceof Error ? err.message : err);
+      }
     }
-    const hydratedProject = workspace ? await svc.getById(project.id) : project;
+    const hydratedProject = createdWorkspaceId ? await svc.getById(project.id) : project;
 
     const actor = getActorInfo(req);
     await logActivity(db, {
@@ -139,6 +154,22 @@ export function projectRoutes(db: Db) {
     if (!project) {
       res.status(404).json({ error: "Project not found" });
       return;
+    }
+
+    // Rename managed GitHub repo if project name changed
+    if (req.body.name && existing.name !== project.name && project.workspaces?.length) {
+      const { githubAppService } = await import("../services/github-app.js");
+      const github = githubAppService(db);
+      for (const ws of project.workspaces) {
+        if (!ws.repoUrl || !github.isManagedRepo(ws.repoUrl, project.companyId)) continue;
+        const fullName = github.parseRepoFullName(ws.repoUrl);
+        if (!fullName) continue;
+        const newRepoName = github.deriveRepoName(project.companyId, project.name);
+        const newCloneUrl = await github.renameRepo(project.companyId, fullName, newRepoName);
+        if (newCloneUrl) {
+          await svc.updateWorkspace(project.id, ws.id, { repoUrl: newCloneUrl });
+        }
+      }
     }
 
     const actor = getActorInfo(req);
@@ -426,6 +457,18 @@ export function projectRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
+
+    // Delete managed GitHub repos before DB delete
+    if (existing.workspaces?.length) {
+      const { githubAppService } = await import("../services/github-app.js");
+      const github = githubAppService(db);
+      for (const ws of existing.workspaces) {
+        if (!ws.repoUrl || !github.isManagedRepo(ws.repoUrl, existing.companyId)) continue;
+        const fullName = github.parseRepoFullName(ws.repoUrl);
+        if (fullName) await github.deleteRepo(existing.companyId, fullName);
+      }
+    }
+
     const project = await svc.remove(id);
     if (!project) {
       res.status(404).json({ error: "Project not found" });
