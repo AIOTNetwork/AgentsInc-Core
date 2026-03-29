@@ -53,6 +53,9 @@ FROM base AS build
 WORKDIR /app
 COPY --from=deps /app /app
 
+# Root tsconfig needed by all packages that extend it
+COPY tsconfig.base.json tsconfig.base.json
+
 # Copy shared packages first (dependencies of ui and server)
 COPY packages/shared/ packages/shared/
 COPY packages/db/ packages/db/
