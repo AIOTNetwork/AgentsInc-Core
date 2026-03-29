@@ -10,7 +10,8 @@ import {
 } from "@paperclipai/shared";
 import { trackProjectCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
-import { projectService, logActivity, workspaceOperationService } from "../services/index.js";
+import { projectService, heartbeatService, logActivity, workspaceOperationService } from "../services/index.js";
+import { queueIssueAssignmentWakeup } from "../services/issue-assignment-wakeup.js";
 import { conflict, notFound } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { startRuntimeServicesForWorkspaceControl, stopRuntimeServicesForProjectWorkspace } from "../services/workspace-runtime.js";
@@ -24,6 +25,7 @@ export function projectRoutes(db: Db) {
   const router = Router();
   const svc = projectService(db);
   const workspaceOperations = workspaceOperationService(db);
+  const heartbeat = heartbeatService(db);
 
   async function resolveCompanyIdForProjectReference(req: Request) {
     const companyIdQuery = req.query.companyId;
@@ -168,6 +170,7 @@ export function projectRoutes(db: Db) {
 
   router.post("/projects/:id/workspaces", validate(createProjectWorkspaceSchema), async (req, res) => {
     const id = req.params.id as string;
+    console.log(`[projects] POST /projects/${id}/workspaces`, JSON.stringify(req.body));
     const existing = await svc.getById(id);
     if (!existing) {
       res.status(404).json({ error: "Project not found" });
@@ -176,6 +179,7 @@ export function projectRoutes(db: Db) {
     assertCompanyAccess(req, existing.companyId);
     const workspace = await svc.createWorkspace(id, req.body);
     if (!workspace) {
+      console.warn(`[projects] createWorkspace returned null for project ${id}`);
       res.status(422).json({ error: "Invalid project workspace payload" });
       return;
     }
@@ -581,6 +585,18 @@ export function projectRoutes(db: Db) {
             ...(ceoAgent ? { assigneeAgentId: ceoAgent.id } : {}),
           });
           issueId = created.id;
+
+          // Wake the CEO so it picks up the issue immediately
+          if (ceoAgent) {
+            void queueIssueAssignmentWakeup({
+              heartbeat,
+              issue: { id: created.id, assigneeAgentId: ceoAgent.id, status: "todo" },
+              reason: "preview_build_failed",
+              mutation: "create",
+              contextSource: "preview.snapshot_failed",
+              requestedByActorType: "system",
+            });
+          }
         }
       } catch (issueErr) {
         console.warn("[preview] Failed to create preview issue:", issueErr);

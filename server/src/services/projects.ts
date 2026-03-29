@@ -571,10 +571,12 @@ export function projectService(db: Db) {
 
       // Auto-create a private GitHub repo if none provided and credentials are available
       if (!repoUrl && project.name) {
+        console.log(`[projects] No repoUrl provided, attempting GitHub repo creation for "${project.name}" (company: ${project.companyId})`);
         try {
           const github = githubAppService(db);
           const repo = await github.createDefaultRepo(project.companyId, project.name);
           repoUrl = repo.cloneUrl;
+          console.log(`[projects] GitHub repo created: ${repo.fullName} → ${repo.cloneUrl}`);
         } catch (err) {
           console.warn("[projects] GitHub repo creation failed:", err instanceof Error ? err.message : err);
         }
@@ -890,6 +892,45 @@ export function projectService(db: Db) {
         return { project: null, ambiguous: true } as const;
       }
       return { project: null, ambiguous: false } as const;
+    },
+
+    /**
+     * Ensure a project workspace has a GitHub repo. If repoUrl is missing,
+     * create one via GitHub PAT and update the workspace record.
+     * Returns the repo URL (existing or newly created), or null if unavailable.
+     */
+    ensureWorkspaceRepo: async (
+      workspaceId: string,
+    ): Promise<string | null> => {
+      const workspace = await db
+        .select()
+        .from(projectWorkspaces)
+        .where(eq(projectWorkspaces.id, workspaceId))
+        .then((rows) => rows[0] ?? null);
+      if (!workspace) return null;
+
+      const existing = readNonEmptyString(workspace.repoUrl);
+      if (existing) return existing;
+
+      const project = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, workspace.projectId))
+        .then((rows) => rows[0] ?? null);
+      if (!project) return null;
+
+      try {
+        const github = githubAppService(db);
+        const repo = await github.createDefaultRepo(project.companyId, project.name);
+        await db
+          .update(projectWorkspaces)
+          .set({ repoUrl: repo.cloneUrl, updatedAt: new Date() })
+          .where(eq(projectWorkspaces.id, workspaceId));
+        return repo.cloneUrl;
+      } catch (err) {
+        console.warn("[projects] ensureWorkspaceRepo failed:", err instanceof Error ? err.message : err);
+        return null;
+      }
     },
   };
 }

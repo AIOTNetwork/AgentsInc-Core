@@ -59,6 +59,7 @@ import { instanceSettingsService } from "./instance-settings.js";
 import { redactCurrentUserText, redactCurrentUserValue } from "../log-redaction.js";
 import { getWorkspaceS3Sync, TAR_EXCLUDES } from "./workspace-snapshot.js";
 import { githubAppService } from "./github-app.js";
+import { projectService } from "./projects.js";
 import { gitFetchAndReset, gitClone, gitCommitMergeAndPush } from "./workspace-git.js";
 import {
   hasSessionCompactionThresholds,
@@ -1482,6 +1483,13 @@ export function heartbeatService(db: Db) {
         let projectCwd = readNonEmptyString(workspace.cwd);
         let managedWorkspaceWarning: string | null = null;
         if (!projectCwd || projectCwd === REPO_ONLY_CWD_SENTINEL) {
+          // Backfill GitHub repo if workspace has none
+          if (!readNonEmptyString(workspace.repoUrl)) {
+            const backfilledUrl = await projectService(db).ensureWorkspaceRepo(workspace.id);
+            if (backfilledUrl) {
+              workspace.repoUrl = backfilledUrl;
+            }
+          }
           try {
             const managedWorkspace = await ensureManagedProjectWorkspace(db, {
               companyId: agent.companyId,
