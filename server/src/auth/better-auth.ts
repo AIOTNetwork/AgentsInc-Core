@@ -155,7 +155,7 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
                   `Sign in to AgentsInc`,
                   `</a>`,
                   `<p style="color:#475569;font-size:12px;margin:20px 0 0;line-height:1.5">`,
-                  `This link expires in 5 minutes and can only be used once.<br>If you didn't request this, you can safely ignore it.`,
+                  `This link expires in 10 minutes and can only be used once.<br>If you didn't request this, you can safely ignore it.`,
                   `</p>`,
                   `</div>`,
                   `<p style="color:#334155;font-size:11px;text-align:center;margin-top:24px">`,
@@ -165,6 +165,7 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
                 ].join("\n"),
               });
             },
+            expiresIn: 600, // 10 minutes
             disableSignUp: config.authDisableSignUp,
           }),
         ]
