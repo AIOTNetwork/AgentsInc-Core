@@ -1522,11 +1522,19 @@ export function agentRoutes(db: Db) {
       createInput.adapterType,
       ((createInput.adapterConfig ?? {}) as Record<string, unknown>),
     );
+    // Auto-include the preview skill for all new agents (if installed in company)
+    let effectiveDesiredSkills = Array.isArray(requestedDesiredSkills) ? requestedDesiredSkills : undefined;
+    {
+      const allSkills = await companySkills.list(companyId);
+      if (allSkills.some((s) => s.slug === "agentsinc-preview")) {
+        effectiveDesiredSkills = [...new Set([...(effectiveDesiredSkills ?? []), "agentsinc-preview"])];
+      }
+    }
     const desiredSkillAssignment = await resolveDesiredSkillAssignment(
       companyId,
       createInput.adapterType,
       requestedAdapterConfig,
-      Array.isArray(requestedDesiredSkills) ? requestedDesiredSkills : undefined,
+      effectiveDesiredSkills,
     );
     const normalizedAdapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
       companyId,
