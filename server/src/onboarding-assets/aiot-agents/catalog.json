@@ -127,7 +127,7 @@
     "category": "trading",
     "name": "On-Chain Researcher",
     "defaultRole": "researcher",
-    "description": "Research-focused on-chain analyst specializing in whale wallet tracking, exchange flow analysis, smart money profiling, and alpha signal discovery — produces research reports, not trade signals.",
+    "description": "Research-focused on-chain analyst specializing in whale wallet tracking, exchange flow analysis, smart money profiling, and alpha signal discovery \u2014 produces research reports, not trade signals.",
     "bundlePath": "aiot-agents/trading/onchain-researcher",
     "bundleFiles": [
       "AGENTS.md",
@@ -146,7 +146,7 @@
     "category": "trading",
     "name": "Trade Signal Auditor",
     "defaultRole": "qa",
-    "description": "Quality assurance specialist that audits prediction accuracy, detects systematic cognitive biases, ranks signal reliability, and maintains forecast calibration across all trading agents — does not trade.",
+    "description": "Quality assurance specialist that audits prediction accuracy, detects systematic cognitive biases, ranks signal reliability, and maintains forecast calibration across all trading agents \u2014 does not trade.",
     "bundlePath": "aiot-agents/trading/trade-signal-auditor",
     "bundleFiles": [
       "AGENTS.md",
@@ -156,6 +156,244 @@
     ],
     "desiredSkills": [
       "prediction-journal"
+    ]
+  },
+  {
+    "path": "aiot-agents/leadership/leadership-cto/SOUL.md",
+    "source": "aiot-agents",
+    "category": "leadership",
+    "name": "CTO",
+    "defaultRole": "cto",
+    "description": "Chief Technology Officer owning architecture, infrastructure, engineering velocity, technical debt, security posture, and build-vs-buy decisions.",
+    "bundlePath": "aiot-agents/leadership/leadership-cto",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/leadership/leadership-cfo/SOUL.md",
+    "source": "aiot-agents",
+    "category": "leadership",
+    "name": "CFO",
+    "defaultRole": "cfo",
+    "description": "Chief Financial Officer owning cash flow, runway, budgeting, financial modeling, unit economics, audit readiness, compliance, and investor relations.",
+    "bundlePath": "aiot-agents/leadership/leadership-cfo",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/leadership/leadership-coo/SOUL.md",
+    "source": "aiot-agents",
+    "category": "leadership",
+    "name": "COO",
+    "defaultRole": "coo",
+    "description": "Chief Operating Officer owning operational efficiency, process optimization, cross-functional coordination, resource allocation, vendor management, and scaling operations.",
+    "bundlePath": "aiot-agents/leadership/leadership-coo",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/leadership/leadership-cmo/SOUL.md",
+    "source": "aiot-agents",
+    "category": "leadership",
+    "name": "CMO",
+    "defaultRole": "cmo",
+    "description": "Chief Marketing Officer owning brand strategy, demand generation, content marketing, funnel optimization, CAC management, market positioning, and growth experiments.",
+    "bundlePath": "aiot-agents/leadership/leadership-cmo",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/leadership/leadership-cpo/SOUL.md",
+    "source": "aiot-agents",
+    "category": "leadership",
+    "name": "CPO",
+    "defaultRole": "cpo",
+    "description": "Chief Product Officer owning product vision, roadmap, user research, feature prioritization, product-market fit, activation and retention metrics, and pricing strategy.",
+    "bundlePath": "aiot-agents/leadership/leadership-cpo",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/leadership/leadership-cro/SOUL.md",
+    "source": "aiot-agents",
+    "category": "leadership",
+    "name": "CRO",
+    "defaultRole": "cro",
+    "description": "Chief Revenue Officer owning revenue growth, pipeline management, sales process, forecasting accuracy, GTM strategy, sales enablement, and customer expansion.",
+    "bundlePath": "aiot-agents/leadership/leadership-cro",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/ceo/ceo-saas-startup/SOUL.md",
+    "source": "aiot-agents",
+    "category": "ceo",
+    "name": "SaaS Startup CEO",
+    "defaultRole": "ceo",
+    "description": "Product-led growth CEO obsessed with MRR, churn, sprint velocity, and feature-market fit. Ships weekly, moves fast, runs a lean SaaS startup.",
+    "bundlePath": "aiot-agents/ceo/ceo-saas-startup",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/ceo/ceo-dev-agency/SOUL.md",
+    "source": "aiot-agents",
+    "category": "ceo",
+    "name": "Dev Agency CEO",
+    "defaultRole": "ceo",
+    "description": "Client delivery CEO managing SOWs, project timelines, resource utilization, and client satisfaction. Balances quality, speed, and margin.",
+    "bundlePath": "aiot-agents/ceo/ceo-dev-agency",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/ceo/ceo-trading-desk/SOUL.md",
+    "source": "aiot-agents",
+    "category": "ceo",
+    "name": "Trading Desk CEO",
+    "defaultRole": "ceo",
+    "description": "Quantitative, risk-first CEO monitoring P&L, drawdown, position sizing, and signal quality. Never overrides risk limits.",
+    "bundlePath": "aiot-agents/ceo/ceo-trading-desk",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/ceo/ceo-content-studio/SOUL.md",
+    "source": "aiot-agents",
+    "category": "ceo",
+    "name": "Content Studio CEO",
+    "defaultRole": "ceo",
+    "description": "Creative pipeline CEO managing editorial calendars, brand voice, content quality, and audience growth. Balances creativity with consistency.",
+    "bundlePath": "aiot-agents/ceo/ceo-content-studio",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/ceo/ceo-ecommerce/SOUL.md",
+    "source": "aiot-agents",
+    "category": "ceo",
+    "name": "E-Commerce CEO",
+    "defaultRole": "ceo",
+    "description": "Conversion-obsessed CEO tracking GMV, AOV, CAC/LTV, conversion funnels, and inventory. Ops-heavy and data-driven.",
+    "bundlePath": "aiot-agents/ceo/ceo-ecommerce",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/ceo/ceo-game-studio/SOUL.md",
+    "source": "aiot-agents",
+    "category": "ceo",
+    "name": "Game Studio CEO",
+    "defaultRole": "ceo",
+    "description": "Milestone-driven game development CEO balancing creative vision, scope, and player experience across art, design, and engineering disciplines.",
+    "bundlePath": "aiot-agents/ceo/ceo-game-studio",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/ceo/ceo-open-source/SOUL.md",
+    "source": "aiot-agents",
+    "category": "ceo",
+    "name": "Open Source CEO",
+    "defaultRole": "ceo",
+    "description": "Community-first CEO focused on contributor experience, PR review velocity, release cadence, and adoption metrics. Transparent by default.",
+    "bundlePath": "aiot-agents/ceo/ceo-open-source",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
+    ]
+  },
+  {
+    "path": "aiot-agents/ceo/ceo-consulting/SOUL.md",
+    "source": "aiot-agents",
+    "category": "ceo",
+    "name": "Consulting CEO",
+    "defaultRole": "ceo",
+    "description": "Engagement-based CEO managing utilization rates, knowledge capture, deliverable quality, and client relationships. Expertise-driven.",
+    "bundlePath": "aiot-agents/ceo/ceo-consulting",
+    "bundleFiles": [
+      "AGENTS.md",
+      "HEARTBEAT.md",
+      "SOUL.md"
+    ],
+    "desiredSkills": [
+      "harness-design"
     ]
   }
 ]
