@@ -53,8 +53,8 @@ FROM base AS build
 WORKDIR /app
 COPY --from=deps /app /app
 
-# Root tsconfig needed by all packages that extend it
-COPY tsconfig.base.json tsconfig.base.json
+# Root tsconfigs needed by all packages that extend them
+COPY tsconfig.json tsconfig.base.json ./
 
 # Copy shared packages first (dependencies of ui and server)
 COPY packages/shared/ packages/shared/
@@ -62,7 +62,8 @@ COPY packages/db/ packages/db/
 COPY packages/adapter-utils/ packages/adapter-utils/
 COPY packages/plugins/sdk/ packages/plugins/sdk/
 
-# Build shared packages
+# Build shared first, then plugin-sdk (which depends on shared's dist/)
+RUN pnpm --filter @paperclipai/shared build
 RUN pnpm --filter @paperclipai/plugin-sdk build
 
 # Copy and build UI (only rebuilds when ui/ source changes)
