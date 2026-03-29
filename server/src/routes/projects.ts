@@ -561,52 +561,23 @@ export function projectRoutes(db: Db) {
             .where(and(eq(agentsTable.companyId, project.companyId), eq(agentsTable.role, "ceo")))
             .then((rows) => rows[0] ?? null);
 
-          const descriptionParts = [
-            `## Preview Snapshot Failed`,
+          const description = [
+            `Preview snapshot failed for project "${project.name}".`,
             ``,
-            `**Project:** ${project.name}`,
-            `**Error:** \`${errorCode}\``,
-            `**Details:** ${message}`,
+            `- **Error:** \`${errorCode}\``,
+            `- **Details:** ${message}`,
+            `- **Workspace directory:** ${wsDir ?? "not found"}`,
+            `- **Dockerfile present:** ${hasDockerfile ? "yes" : "no"}`,
             ``,
-            `## Diagnosis`,
-            `- Workspace directory: ${wsDir ?? "not found"}`,
-            `- Dockerfile present: ${hasDockerfile ? "yes" : "**no**"}`,
-          ];
-
-          if (!hasDockerfile) {
-            descriptionParts.push(
-              ``,
-              `## Action Required`,
-              `This project needs a \`Dockerfile\` to enable live previews.`,
-              ``,
-              `Create a \`Dockerfile\` in the project root that:`,
-              `- Installs dependencies`,
-              `- Builds the application (if needed)`,
-              `- Exposes the correct port`,
-              `- Binds to \`0.0.0.0\` (not localhost)`,
-              `- Uses a lightweight base image (alpine preferred)`,
-            );
-          } else if (isNotFound) {
-            descriptionParts.push(
-              ``,
-              `## Action Required`,
-              `The workspace directory could not be found or is not a valid directory.`,
-              `Verify the project's local folder configuration points to an existing directory.`,
-            );
-          } else {
-            descriptionParts.push(
-              ``,
-              `## Action Required`,
-              `The snapshot creation failed. Investigate the error above and fix the underlying issue.`,
-            );
-          }
+            `Use the preview skill to diagnose and fix this issue.`,
+          ].join("\n");
 
           const created = await issueSvc.create(project.companyId, {
             title: `Fix preview deployment for "${project.name}"`,
             projectId: project.id,
             priority: "high",
             status: "todo",
-            description: descriptionParts.join("\n"),
+            description,
             ...(ceoAgent ? { assigneeAgentId: ceoAgent.id } : {}),
           });
           issueId = created.id;
