@@ -1,182 +1,143 @@
 ---
 name: harness-design
 description: >
-  Multi-agent harness design methodology for long-running autonomous work.
-  Implements the Planner-Generator-Evaluator (PGE) architecture with sprint
-  contracts, grading criteria, and structured handoffs. Use this skill when
-  orchestrating complex, multi-step work across agents — decomposing goals
-  into sprints, negotiating done-criteria, running generator-evaluator loops,
-  and managing context across sessions.
+  Multi-agent harness design for long-running autonomous work. Implements
+  Planner-Generator-Evaluator (PGE) architecture with sprint contracts,
+  grading criteria, and structured handoffs. Use when orchestrating complex,
+  multi-step work across agents — decomposing goals into sprints, negotiating
+  done-criteria, running generator-evaluator feedback loops, and managing
+  context across sessions.
 ---
 
-# Harness Design for Long-Running Autonomous Work
+# PGE Harness Design
 
-This skill encodes the methodology from Anthropic's research on harness design for long-running application development. It gives you a structured approach to orchestrating complex work across multiple agents over extended sessions.
+Decompose complex work into three roles. Never let the same agent generate and evaluate.
 
-## Core Principle
+## Roles
 
-**Naive single-agent execution fails on complex tasks.** Two failure modes dominate:
+### Planner
 
-1. **Context degradation** — As the context window fills, agents lose coherence and may exhibit "context anxiety" (wrapping up prematurely). Solution: context resets with structured handoffs, or compaction when the model handles it well.
-2. **Self-evaluation bias** — Agents grade their own work too generously, even when quality is obviously mediocre. Solution: separate the agent doing the work from the agent judging it.
+Expand a brief goal (1–4 sentences) into a structured spec. Output to `SPEC.md`.
 
-## The Three-Agent Architecture (PGE)
-
-Every complex initiative should be decomposed into three roles:
-
-### 1. Planner
-
-The Planner takes a brief goal (1–4 sentences) and expands it into a full specification.
-
-**Rules:**
 - Be ambitious about scope — push for completeness
-- Stay focused on **product context and high-level technical design**, not granular implementation details
-- If the planner over-specifies technical details and gets something wrong, errors cascade into downstream implementation
-- Constrain agents on **deliverables to produce**, let them figure out the path
+- Constrain **deliverables**, not implementation paths
+- Stay at product/design level — over-specified technical details cascade errors downstream
 - Look for opportunities to add value beyond the literal request
 
-**Output:** A structured spec document saved to a known file path that downstream agents can read.
+### Generator
 
-### 2. Generator
+Implement work in **sprints** — one feature/deliverable at a time.
 
-The Generator implements work in **sprints**, picking up one feature/deliverable at a time from the spec.
+- Self-evaluate before handing off to the Evaluator
+- Checkpoint each sprint with git
+- On evaluation feedback: **refine** if scores trend well, **pivot** to a different approach if not
 
-**Rules:**
-- Work one feature at a time — never parallelize within a sprint
-- Self-evaluate at the end of each sprint before handing off to QA
-- Use version control (git) to checkpoint each sprint
-- When evaluation feedback arrives, make a strategic decision:
-  - **Refine** the current direction if scores are trending well
-  - **Pivot** to an entirely different approach if the current one isn't working
+### Evaluator
 
-### 3. Evaluator
+Judge the Generator's work. Must be a **separate agent** — never the same one that produced the work.
 
-The Evaluator judges the Generator's work against concrete criteria. It must be a separate agent — never the same agent that produced the work.
-
-**Rules:**
-- Test the actual output, not the description of it (use tools: browse, run, click through)
+- Test actual output with tools (browse, run, click through) — not descriptions
 - Grade against explicit criteria with hard thresholds
-- If any criterion falls below its threshold, the sprint **fails** and returns detailed feedback
-- Be skeptical by default — tuning a standalone evaluator to be critical is far more tractable than making a generator critical of its own work
-- Use few-shot examples with detailed score breakdowns to calibrate judgment
+- Fail the sprint if any criterion is below threshold; return detailed feedback
+- Be skeptical by default — calibrate with few-shot score breakdowns
 
 ## Sprint Contracts
 
-Before each sprint, the Generator and Evaluator **negotiate a sprint contract**: an explicit agreement on what "done" looks like for that chunk of work.
+Before each sprint, Generator and Evaluator negotiate what "done" looks like.
 
-**Why:** The product spec is intentionally high-level. The sprint contract bridges the gap between user stories and testable implementation.
+1. Generator proposes scope + verification method
+2. Evaluator reviews — is this the right thing to build?
+3. Iterate until agreed
+4. Generator builds against the contract
+5. Evaluator grades against the contract
 
-**Process:**
-1. Generator proposes what it will build and how success will be verified
-2. Evaluator reviews the proposal — is the Generator building the right thing?
-3. They iterate until they agree
-4. Generator builds against the agreed contract
-5. Evaluator grades against the agreed contract
-
-**Communication:** Use files. One agent writes a file, another reads and responds. This keeps handoffs explicit and auditable.
+Without a contract, evaluators grade against vague expectations and pass everything.
 
 ## Grading Criteria
 
-Turn subjective quality into concrete, gradable dimensions. Each criterion should be:
-- **Specific** enough that two evaluators would reach similar scores
-- **Weighted** by importance — emphasize the dimensions where agents are weakest
-- **Calibrated** with few-shot examples showing what each score level looks like
+Turn subjective quality into concrete, gradable dimensions. Each criterion: specific (two evaluators would agree), weighted by importance, calibrated with few-shot examples.
 
-### Example: Software Quality Criteria
+**Emphasize criteria where agents are weakest.** Models already score well on craft and functionality — push on taste, depth, and originality.
 
-| Criterion | Weight | What it measures |
+### Software Quality
+
+| Criterion | Weight | Measures |
 |---|---|---|
-| Product depth | High | Does the feature work end-to-end as a real user would use it? |
-| Functionality | High | Can users complete tasks without errors or confusion? |
-| Visual design | Medium | Coherent aesthetic, not generic templates or AI-default patterns |
-| Code quality | Medium | Clean architecture, no obvious tech debt or anti-patterns |
+| Product depth | High | Works end-to-end as a real user would use it |
+| Functionality | High | Users complete tasks without errors or confusion |
+| Visual design | Medium | Coherent aesthetic, not generic templates |
+| Code quality | Medium | Clean architecture, no obvious anti-patterns |
 
-### Example: Design Quality Criteria
+### Design Quality
 
-| Criterion | Weight | What it measures |
+| Criterion | Weight | Measures |
 |---|---|---|
-| Design quality | High | Coherent mood and identity, not just assembled parts |
-| Originality | High | Evidence of deliberate creative choices, not defaults |
-| Craft | Low | Typography, spacing, contrast — technical competence |
+| Design quality | High | Coherent mood and identity, not assembled parts |
+| Originality | High | Deliberate creative choices, not defaults |
+| Craft | Low | Typography, spacing, contrast |
 | Functionality | Low | Usability independent of aesthetics |
-
-**Key insight:** Emphasize the criteria where the model is weakest. Models already score well on craft and functionality by default — push hard on the dimensions that require taste and judgment.
 
 ## Generator-Evaluator Loop
 
-Run 3–10 iterations per sprint (more for subjective tasks like design, fewer for functional tasks).
+3–10 iterations per sprint (more for subjective tasks, fewer for functional).
 
 ```
 for each sprint:
-  1. Negotiate sprint contract (Generator ↔ Evaluator)
+  1. Negotiate sprint contract (Generator <> Evaluator)
   2. Generator implements
-  3. Evaluator tests + grades against criteria
-  4. If all criteria pass thresholds → sprint complete, move to next
-  5. If any criterion fails → Generator gets detailed feedback, loops back to step 2
-  6. If stuck after 3 attempts → escalate (flag for human review or re-plan)
+  3. Evaluator tests + grades
+  4. All criteria pass thresholds -> sprint complete
+  5. Any criterion fails -> detailed feedback, loop to step 2
+  6. Stuck after 3 attempts -> escalate or re-plan
 ```
 
-**Expect non-linear improvement.** Later iterations tend to be better overall, but you'll regularly see cases where a middle iteration is preferred. Implementation complexity also increases across rounds. This is normal.
+Expect non-linear improvement — later iterations trend better overall, but a middle iteration may be preferred. This is normal.
 
 ## Context Management
 
-### When to use context resets
-- Agent exhibits "context anxiety" (wrapping up prematurely)
-- Context window is filling and coherence is degrading
-- Switching between fundamentally different phases of work
+**Reset context when:** agent wraps up prematurely (context anxiety), coherence degrades, or switching between fundamentally different work phases.
 
-### When to use compaction
-- Model handles long contexts well (Opus-class)
-- Continuity matters more than a clean slate
-- Mid-sprint work where losing thread would be costly
+**Use compaction when:** continuity matters more than a clean slate, mid-sprint work where losing thread is costly.
 
-### Structured handoffs between sessions
-Every context reset must produce a **handoff artifact** containing:
+**Every reset produces a handoff artifact:**
 - What was completed
-- Current state of the work (file paths, git branch, running services)
+- Current state (file paths, git branch, running services)
 - What comes next (next sprint, known issues, open questions)
-- Any decisions made and their rationale
+- Decisions made and their rationale
 
-## File-Based Communication Protocol
+## File-Based Communication
 
-Agents communicate through files, not conversation. This keeps handoffs explicit, auditable, and resumable.
+Agents communicate through files — explicit, auditable, resumable.
 
-| File | Written by | Read by | Purpose |
+| File | Writer | Reader | Purpose |
 |---|---|---|---|
 | `SPEC.md` | Planner | Generator, Evaluator | Product specification |
-| `SPRINT-CONTRACT.md` | Generator + Evaluator | Both | Agreed "done" criteria for current sprint |
-| `EVALUATION.md` | Evaluator | Generator | Grades + detailed feedback |
-| `HANDOFF.md` | Any agent | Next agent | State transfer on context reset |
-| `STATUS.md` | Generator | Evaluator, Planner | Current progress and blockers |
+| `SPRINT-CONTRACT.md` | Generator + Evaluator | Both | Agreed done-criteria |
+| `EVALUATION.md` | Evaluator | Generator | Grades + feedback |
+| `HANDOFF.md` | Any agent | Next agent | State transfer on reset |
+| `STATUS.md` | Generator | Evaluator, Planner | Progress and blockers |
 
-## Applying This as CEO
+## Planner Checklist
 
-As CEO, you are the **Planner**. Your role in this architecture:
+When you are the Planner orchestrating an initiative:
 
-1. **Decompose goals into sprints** — Break company objectives into tractable chunks with clear deliverables
-2. **Assign Generator roles** — Delegate sprints to the right specialist agents
-3. **Assign Evaluator roles** — Ensure every piece of work has a separate agent reviewing it
-4. **Enforce sprint contracts** — Don't let generators start work without agreed-upon done criteria
-5. **Monitor the loop** — Track iteration count, score trends, and escalations
-6. **Decide when to ship** — Aggregate evaluator signals to decide when quality is sufficient
-
-### CEO Checklist for Each Initiative
-
-- [ ] Write or commission a spec (Planner output)
-- [ ] Decompose spec into sprints with one feature each
-- [ ] For each sprint: assign a generator agent and an evaluator agent (never the same agent)
+- [ ] Write or commission a spec
+- [ ] Decompose into sprints — one feature each
+- [ ] Assign a Generator and Evaluator per sprint (never the same agent)
 - [ ] Ensure sprint contract is negotiated before work begins
 - [ ] Review evaluator scores — intervene if stuck after 3 iterations
 - [ ] Checkpoint with git after each passing sprint
-- [ ] Write handoff artifact if context resets are needed
+- [ ] Write handoff artifact on context resets
 
 ## Anti-Patterns
 
-- **Self-review** — Never let the agent that built something evaluate it. The bias is structural, not fixable by prompting.
-- **Over-specifying upfront** — Detailed technical specs written before implementation cascade errors. Keep specs at product level.
-- **Skipping the contract** — Without agreed done-criteria, the evaluator grades against vague expectations and passes everything.
-- **Ignoring plateaus** — If scores plateau below threshold after 3+ iterations, pivot the approach or re-scope. More iterations of the same approach won't help.
-- **Single-pass execution** — Even the first iteration improves when criteria exist. The criteria and associated language steer the model away from generic defaults before any feedback loop begins.
+| Pattern | Why it fails |
+|---|---|
+| Self-review | Bias is structural, not fixable by prompting |
+| Over-specifying upfront | Technical specs before implementation cascade errors |
+| Skipping the contract | Evaluator grades against vague expectations, passes everything |
+| Ignoring plateaus | 3+ iterations at same score = pivot or re-scope, not more of the same |
+| Single-pass execution | Even first iterations improve when criteria exist — criteria steer away from defaults |
 
 ## Reference
 
