@@ -290,12 +290,21 @@ export function githubAppService(db: Db): GitHubAppService {
     companyId: string,
     repoName: string,
   ): Promise<{ fullName: string; cloneUrl: string; private: boolean }> {
-    if (!config) throw new Error("GitHub App not configured");
+    // Resolve auth token: GitHub App installation > PAT
+    let authToken: string | null = null;
+    try {
+      const tokenResult = await getInstallationToken(companyId);
+      if (tokenResult) authToken = tokenResult.token;
+    } catch {
+      // App not configured — try PAT
+    }
+    if (!authToken) {
+      const pat = process.env.GITHUB_PAT;
+      if (pat) authToken = pat;
+    }
+    if (!authToken) throw new Error("No GitHub credentials available (need App installation or GITHUB_PAT)");
 
-    const tokenResult = await getInstallationToken(companyId);
-    if (!tokenResult) throw new Error("No GitHub installation available");
-
-    const org = config.defaultOrg;
+    const org = config?.defaultOrg ?? process.env.GITHUB_APP_DEFAULT_ORG ?? "AIOTNetwork";
     const instanceId = resolvePaperclipInstanceId();
     const companyShort = companyId.slice(0, 8);
     const safeProject = repoName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
@@ -306,7 +315,7 @@ export function githubAppService(db: Db): GitHubAppService {
     const res = await fetch(`${GITHUB_API}/orgs/${org}/repos`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${tokenResult.token}`,
+        Authorization: `Bearer ${authToken}`,
         Accept: "application/vnd.github+json",
         "Content-Type": "application/json",
       },

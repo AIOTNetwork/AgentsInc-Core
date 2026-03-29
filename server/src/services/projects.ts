@@ -15,6 +15,7 @@ import {
   type WorkspaceRuntimeService,
 } from "@paperclipai/shared";
 import { listCurrentRuntimeServicesForProjectWorkspaces } from "./workspace-runtime-read-model.js";
+import { githubAppService } from "./github-app.js";
 import { parseProjectExecutionWorkspacePolicy } from "./execution-workspace-policy.js";
 import { mergeProjectWorkspaceRuntimeConfig, readProjectWorkspaceRuntimeConfig } from "./project-workspace-runtime-config.js";
 import { resolveManagedProjectWorkspaceDir } from "../home-paths.js";
@@ -566,7 +567,19 @@ export function projectService(db: Db) {
       if (!project) return null;
 
       const cwd = normalizeWorkspaceCwd(data.cwd);
-      const repoUrl = readNonEmptyString(data.repoUrl);
+      let repoUrl = readNonEmptyString(data.repoUrl);
+
+      // Auto-create a private GitHub repo if none provided and credentials are available
+      if (!repoUrl && project.name) {
+        try {
+          const github = githubAppService(db);
+          const repo = await github.createDefaultRepo(project.companyId, project.name);
+          repoUrl = repo.cloneUrl;
+        } catch {
+          // No GitHub credentials — continue without repo
+        }
+      }
+
       const sourceType = readNonEmptyString(data.sourceType) ?? (repoUrl ? "git_repo" : cwd ? "local_path" : "remote_managed");
       const remoteWorkspaceRef = readNonEmptyString(data.remoteWorkspaceRef);
       if (sourceType === "remote_managed") {
