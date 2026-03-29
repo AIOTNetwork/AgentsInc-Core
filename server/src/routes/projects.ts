@@ -531,9 +531,40 @@ export function projectRoutes(db: Db) {
     // Check for Dockerfile in workspace before creating snapshot
     const wsDir = resolveWorkspaceDir(project);
     if (wsDir && !fsSync.existsSync(path.join(wsDir, "Dockerfile"))) {
+      // Auto-create an issue for agents to add a Dockerfile
+      const issueSvc = (await import("../services/index.js")).issueService(db);
+      try {
+        const existingIssues = await issueSvc.list(project.companyId, { projectId: project.id });
+        const alreadyHasDockerfileIssue = existingIssues.some(
+          (i) => i.title.includes("Dockerfile") && i.status !== "done" && i.status !== "cancelled",
+        );
+        if (!alreadyHasDockerfileIssue) {
+          await issueSvc.create(project.companyId, {
+            title: `Add Dockerfile for preview deployment`,
+            projectId: project.id,
+            priority: "high",
+            status: "todo",
+            description: [
+              `The project "${project.name}" needs a Dockerfile to enable live previews.`,
+              ``,
+              `Create a \`Dockerfile\` in the project root that:`,
+              `- Installs dependencies`,
+              `- Exposes the correct port`,
+              `- Binds to 0.0.0.0 (not localhost)`,
+              `- Uses a lightweight base image (alpine preferred)`,
+              ``,
+              `See the agentsinc-preview skill for Dockerfile templates for Node.js, Python, Go, Ruby, and static files.`,
+            ].join("\n"),
+          });
+        }
+      } catch (issueErr) {
+        // Non-fatal — still return the error to the client
+        console.warn("[preview] Failed to create Dockerfile issue:", issueErr);
+      }
+
       res.status(422).json({
         error: "no_dockerfile",
-        message: "Project has no Dockerfile. A Dockerfile is required to deploy a preview.",
+        message: "Project has no Dockerfile. A Dockerfile is required to deploy a preview. An issue has been created for your agents.",
         projectId: project.id,
         projectName: project.name,
       });
