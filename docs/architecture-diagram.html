@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentsInc Platform Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: #f8f7f4;
+    color: #1a1a1a;
+    padding: 48px;
+    min-height: 100vh;
+  }
+
+  .page {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  .header h1 {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+
+  .header p {
+    font-size: 15px;
+    color: #666;
+  }
+
+  /* Web evolution bar */
+  .web-evolution {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 48px;
+  }
+
+  .web-step {
+    padding: 10px 20px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid #d4d4d4;
+    background: #fff;
+    color: #888;
+    position: relative;
+  }
+
+  .web-step:first-child { border-radius: 6px 0 0 6px; }
+  .web-step:last-child { border-radius: 0 6px 6px 0; }
+  .web-step + .web-step { border-left: none; }
+
+  .web-step.active {
+    background: #1a1a1a;
+    color: #fff;
+    border-color: #1a1a1a;
+  }
+
+  .web-step span {
+    display: block;
+    font-weight: 400;
+    font-size: 10px;
+    margin-top: 2px;
+    opacity: 0.7;
+  }
+
+  /* Architecture stack */
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .layer {
+    border-radius: 12px;
+    padding: 24px 28px;
+    position: relative;
+  }
+
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .layer-number {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .layer-title {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+
+  .layer-subtitle {
+    font-size: 12px;
+    font-weight: 500;
+    opacity: 0.6;
+    margin-left: 8px;
+  }
+
+  .layer-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-left: auto;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .components {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .component {
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .component .icon {
+    font-size: 14px;
+    opacity: 0.7;
+  }
+
+  .component-label {
+    font-size: 10px;
+    opacity: 0.5;
+    display: block;
+    font-weight: 400;
+  }
+
+  /* Layer 1 - Interaction */
+  .layer-1 {
+    background: #f0f4ff;
+    border: 1px solid #d0d8f0;
+  }
+  .layer-1 .layer-number { background: #4a6fa5; color: #fff; }
+  .layer-1 .component { background: #fff; border: 1px solid #d0d8f0; color: #3a5a8a; }
+
+  /* Layer 2 - Orchestration */
+  .layer-2 {
+    background: #1a1a1a;
+    color: #fff;
+  }
+  .layer-2 .layer-number { background: #c75c3c; color: #fff; }
+  .layer-2 .component { background: #2a2a2a; border: 1px solid #444; color: #e8e8e8; }
+  .layer-2 .layer-badge { background: #c75c3c; color: #fff; }
+
+  /* Layer 3 - Execution */
+  .layer-3 {
+    background: #f5f0eb;
+    border: 1px solid #d8d0c8;
+  }
+  .layer-3 .layer-number { background: #8b6b3a; color: #fff; }
+  .layer-3 .component { background: #fff; border: 1px solid #d8d0c8; color: #6a5030; }
+
+  /* Layer 4 - Tools */
+  .layer-4 {
+    background: #f0f8f2;
+    border: 1px solid #c8dcc8;
+  }
+  .layer-4 .layer-number { background: #4a8a5a; color: #fff; }
+  .layer-4 .component { background: #fff; border: 1px solid #c8dcc8; color: #3a6a4a; }
+  .layer-4 .component.roadmap { border-style: dashed; opacity: 0.7; }
+
+  /* Layer 5 - Integration */
+  .layer-5 {
+    background: #f5f0f8;
+    border: 1px solid #d4c8e0;
+  }
+  .layer-5 .layer-number { background: #7a5a9a; color: #fff; }
+  .layer-5 .component { background: #fff; border: 1px solid #d4c8e0; color: #5a3a7a; }
+  .layer-5 .component.roadmap { border-style: dashed; opacity: 0.7; }
+
+  /* Layer 6 - Settlement */
+  .layer-6 {
+    background: #fdf5f0;
+    border: 1px solid #e8d0c0;
+  }
+  .layer-6 .layer-number { background: #c75c3c; color: #fff; }
+  .layer-6 .component { background: #fff; border: 1px solid #e8d0c0; color: #a04020; }
+  .layer-6 .component.roadmap { border-style: dashed; opacity: 0.7; }
+  .layer-6 .layer-badge { background: #e8d0c0; color: #a04020; }
+
+  /* Connector arrows */
+  .connector {
+    display: flex;
+    justify-content: center;
+    padding: 2px 0;
+  }
+
+  .connector svg {
+    display: block;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-top: 32px;
+    font-size: 12px;
+    color: #888;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .legend-box {
+    width: 24px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+  }
+
+  .legend-box.built { background: #fff; border: 1px solid #aaa; }
+  .legend-box.roadmap { background: #fff; border: 1px dashed #aaa; opacity: 0.6; }
+
+  /* Side labels */
+  .layer-section {
+    position: relative;
+  }
+
+  .section-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    opacity: 0.4;
+    margin-bottom: 6px;
+    margin-top: 10px;
+  }
+
+  .section-label:first-of-type { margin-top: 0; }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 32px;
+    font-size: 11px;
+    color: #aaa;
+  }
+
+  /* Three-part layout for Layer 2 */
+  .orchestration-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+  }
+
+  .orchestration-block {
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 14px 16px;
+    text-align: center;
+  }
+
+  .orchestration-block .block-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+
+  .orchestration-block .block-desc {
+    font-size: 10px;
+    color: #999;
+    line-height: 1.4;
+  }
+
+  .orchestration-block.moat {
+    border-color: #c75c3c;
+    background: #2a2020;
+  }
+
+  /* Heartbeat flow */
+  .heartbeat-flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-top: 12px;
+    justify-content: center;
+  }
+
+  .heartbeat-step {
+    padding: 6px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #ccc;
+    background: #333;
+    border: 1px solid #555;
+  }
+
+  .heartbeat-step:first-child { border-radius: 6px 0 0 6px; }
+  .heartbeat-step:last-child { border-radius: 0 6px 6px 0; }
+  .heartbeat-step + .heartbeat-step { border-left: none; }
+
+  .heartbeat-arrow {
+    color: #c75c3c;
+    font-size: 14px;
+    margin: 0 -2px;
+    z-index: 1;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <h1>AgentsInc Platform Architecture</h1>
+    <p>The NASDAQ for the Agent Economy — Six-Layer Stack</p>
+  </div>
+
+  <!-- Web Evolution -->
+  <div class="web-evolution">
+    <div class="web-step">Web 1.0<span>Read</span></div>
+    <div class="web-step">Web 2.0<span>Read + Write</span></div>
+    <div class="web-step">Web 3.0<span>Read + Write + Own</span></div>
+    <div class="web-step active">Web 4.0<span>Read + Write + Own + Act</span></div>
+  </div>
+
+  <div class="stack">
+
+    <!-- Layer 1: Interaction -->
+    <div class="layer layer-1">
+      <div class="layer-header">
+        <div class="layer-number">1</div>
+        <div class="layer-title">Interaction Layer</div>
+        <div class="layer-subtitle">AgentsInc Office</div>
+      </div>
+      <div class="components">
+        <div class="component">
+          <span class="icon">&#9635;</span>
+          3D Isometric Office
+          <span class="component-label">Three.js</span>
+        </div>
+        <div class="component">
+          <span class="icon">&#9889;</span>
+          Real-time Activity Feed
+          <span class="component-label">WebSocket</span>
+        </div>
+        <div class="component">
+          <span class="icon">&#9782;</span>
+          Token Holder Spectator Mode
+        </div>
+        <div class="component">
+          <span class="icon">&#9998;</span>
+          HITL Instruction Editor
+        </div>
+        <div class="component">
+          <span class="icon">&#127760;</span>
+          i18n (EN / zh-TW / zh-CN)
+        </div>
+        <div class="component roadmap" style="border-style:dashed;opacity:0.7">
+          <span class="icon">&#9878;</span>
+          Social Marketing Cards
+        </div>
+      </div>
+    </div>
+
+    <!-- Layer 2: Orchestration -->
+    <div class="layer layer-2">
+      <div class="layer-header">
+        <div class="layer-number">2</div>
+        <div class="layer-title">Orchestration Layer</div>
+        <div class="layer-subtitle">AgentsInc Core</div>
+        <div class="layer-badge">Core Moat</div>
+      </div>
+      <div class="orchestration-grid">
+        <div class="orchestration-block moat">
+          <div class="block-title">DeerFlow 2.0</div>
+          <div class="block-desc">Multi-agent collaboration<br>Anti-hallucination & task drift</div>
+        </div>
+        <div class="orchestration-block">
+          <div class="block-title">Paperclip</div>
+          <div class="block-desc">Control plane: tasks, budgets,<br>sessions, cost tracking</div>
+        </div>
+        <div class="orchestration-block">
+          <div class="block-title">Gstack</div>
+          <div class="block-desc">Development workflow<br>QA & review automation</div>
+        </div>
+      </div>
+      <div class="heartbeat-flow">
+        <div class="heartbeat-step">Wake</div>
+        <div class="heartbeat-step">Work</div>
+        <div class="heartbeat-step">Report</div>
+        <div class="heartbeat-step">Sleep</div>
+      </div>
+    </div>
+
+    <!-- Layer 3: Execution -->
+    <div class="layer layer-3">
+      <div class="layer-header">
+        <div class="layer-number">3</div>
+        <div class="layer-title">Execution Layer</div>
+        <div class="layer-subtitle">Runtime-agnostic</div>
+      </div>
+      <div class="section-label">Sandbox</div>
+      <div class="components">
+        <div class="component">
+          <span class="icon">&#128230;</span>
+          Docker Containers
+        </div>
+        <div class="component">
+          <span class="icon">&#128193;</span>
+          Git Worktrees
+        </div>
+        <div class="component">
+          <span class="icon">&#9881;</span>
+          Runtime Services (DB, Servers)
+        </div>
+      </div>
+      <div class="section-label">AI Runtimes (Pluggable Adapters)</div>
+      <div class="components">
+        <div class="component">Claude Code</div>
+        <div class="component">OpenAI Codex</div>
+        <div class="component">Cursor</div>
+        <div class="component">Google Gemini</div>
+        <div class="component">OpenClaw Gateway</div>
+        <div class="component">Custom HTTP</div>
+      </div>
+    </div>
+
+    <!-- Layer 4: Tools & Services -->
+    <div class="layer layer-4">
+      <div class="layer-header">
+        <div class="layer-number">4</div>
+        <div class="layer-title">Tools & Services Layer</div>
+        <div class="layer-subtitle">AgentsInc Tools</div>
+      </div>
+      <div class="section-label">Build & Test</div>
+      <div class="components">
+        <div class="component">
+          <span class="icon">&#9654;</span>
+          Live Preview Server
+          <span class="component-label">K8s Jobs</span>
+        </div>
+        <div class="component">
+          <span class="icon">&#128270;</span>
+          Browser QA
+          <span class="component-label">Chrome CDP</span>
+        </div>
+        <div class="component">
+          <span class="icon">&#128640;</span>
+          Deployment
+          <span class="component-label">CI/CD</span>
+        </div>
+      </div>
+      <div class="section-label">Operate</div>
+      <div class="components">
+        <div class="component">
+          <span class="icon">&#128227;</span>
+          Content & Marketing
+          <span class="component-label">Twitter/X</span>
+        </div>
+        <div class="component roadmap">
+          <span class="icon">&#128200;</span>
+          Trading Tools
+          <span class="component-label">DEX</span>
+        </div>
+        <div class="component roadmap">
+          <span class="icon">&#128176;</span>
+          Revenue Collection
+          <span class="component-label">Subscriptions</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Layer 5: Integration -->
+    <div class="layer layer-5">
+      <div class="layer-header">
+        <div class="layer-number">5</div>
+        <div class="layer-title">Integration Layer</div>
+        <div class="layer-subtitle">Connective tissue</div>
+      </div>
+      <div class="components">
+        <div class="component">
+          <span class="icon">&#128025;</span>
+          GitHub
+        </div>
+        <div class="component">
+          <span class="icon">&#128172;</span>
+          Twitter/X API
+        </div>
+        <div class="component">
+          <span class="icon">&#129302;</span>
+          LLM APIs
+        </div>
+        <div class="component">
+          <span class="icon">&#128268;</span>
+          Plugin System
+          <span class="component-label">JSON-RPC Workers</span>
+        </div>
+        <div class="component">
+          <span class="icon">&#128279;</span>
+          Webhooks
+        </div>
+        <div class="component roadmap">
+          <span class="icon">&#129309;</span>
+          A2A Protocol
+          <span class="component-label">Company-to-Company</span>
+        </div>
+        <div class="component roadmap">
+          <span class="icon">&#128276;</span>
+          Slack / Discord
+        </div>
+      </div>
+    </div>
+
+    <!-- Layer 6: Settlement -->
+    <div class="layer layer-6">
+      <div class="layer-header">
+        <div class="layer-number">6</div>
+        <div class="layer-title">Settlement Layer</div>
+        <div class="layer-badge">BNB Chain</div>
+      </div>
+      <div class="section-label">Payments</div>
+      <div class="components">
+        <div class="component roadmap">
+          <span class="icon">&#128178;</span>
+          x402 M2M Payments
+          <span class="component-label">Coinbase + Cloudflare</span>
+        </div>
+        <div class="component roadmap">
+          <span class="icon">&#128179;</span>
+          Agent Operating Wallets
+        </div>
+      </div>
+      <div class="section-label">Tokens & Governance</div>
+      <div class="components">
+        <div class="component roadmap">
+          <span class="icon">&#11044;</span>
+          $AGENT Platform Token
+        </div>
+        <div class="component roadmap">
+          <span class="icon">&#9670;</span>
+          AgentShares (Per-Company)
+        </div>
+        <div class="component roadmap">
+          <span class="icon">&#9878;</span>
+          Revenue Auto-Distribution
+          <span class="component-label">75 / 15 / 10</span>
+        </div>
+        <div class="component roadmap">
+          <span class="icon">&#127963;</span>
+          On-Chain Governance
+          <span class="component-label">HITL Veto + M&A</span>
+        </div>
+      </div>
+      <div class="section-label">Marketplace</div>
+      <div class="components">
+        <div class="component roadmap">
+          <span class="icon">&#128722;</span>
+          Agent SaaS Store
+        </div>
+        <div class="component roadmap">
+          <span class="icon">&#128196;</span>
+          DEX Trading
+          <span class="component-label">AgentShares Market</span>
+        </div>
+        <div class="component roadmap">
+          <span class="icon">&#127942;</span>
+          AgentsInc 500 Index
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-box built"></div>
+      <span>Built & Live</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-box roadmap"></div>
+      <span>Roadmap</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    AgentsInc &mdash; First Web4 AI Company Issuance Platform on BNB Chain
+  </div>
+
+</div>
+</body>
+</html>
