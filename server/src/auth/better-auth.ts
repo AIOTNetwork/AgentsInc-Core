@@ -139,11 +139,6 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
         ? [
           magicLink({
             sendMagicLink: async ({ email, url: rawUrl }: { email: string; url: string }, ctx: any) => {
-              // For demo emails, capture the URL instead of sending an email
-              if (isDemoEmail(email)) {
-                demoMagicLinkUrls.set(email.toLowerCase(), rawUrl);
-                return;
-              }
               // Rewrite the verification URL origin to match the requester's origin
               // so the magic link goes through the same proxy (e.g. Office's Caddy)
               // and the session cookie is set on the correct domain.
@@ -163,6 +158,11 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
                 }
               } catch {
                 // Fallback to original URL
+              }
+              // For demo emails, capture the rewritten URL instead of sending an email
+              if (isDemoEmail(email)) {
+                demoMagicLinkUrls.set(email.toLowerCase(), url);
+                return;
               }
               const mg = new Mailgun(FormData);
               const client = mg.client({
