@@ -3139,34 +3139,36 @@ export function heartbeatService(db: Db) {
       }
       await finalizeAgentStatus(agent.id, outcome);
 
-      // Auto-sync workspace to S3/MinIO after successful run (for cloud preview support)
-      if (outcome === "succeeded" && resolvedProjectId && executionWorkspace.cwd) {
+      // Auto-sync workspace to S3/MinIO after run (for cloud preview support)
+      if (resolvedProjectId && executionWorkspace.cwd) {
         syncWorkspaceToS3(agent.companyId, resolvedProjectId, executionWorkspace.cwd).catch((syncErr) => {
           logger.warn({ err: syncErr, projectId: resolvedProjectId }, "workspace S3 sync failed (non-fatal)");
         });
       }
 
-      // Git commit + merge + push after successful run
-      if (outcome === "succeeded" && executionWorkspace.cwd && executionWorkspace.repoUrl) {
+      // Git commit + merge + push after run — sync regardless of outcome
+      // so that partial work is preserved and previews reflect latest state
+      if (executionWorkspace.cwd && executionWorkspace.repoUrl) {
         const github = githubAppService(db);
         const credUrl = await github.getCredentialUrl(agent.companyId, executionWorkspace.repoUrl).catch((err) => { logger.warn({ err, companyId: agent.companyId }, "credential URL fetch failed, using plain repo URL"); return executionWorkspace.repoUrl!; });
         const branch = executionWorkspace.branchName ?? "main";
         const baseBranch = executionWorkspace.repoRef ?? "main";
+        const commitSuffix = outcome === "succeeded" ? "" : ` (${outcome})`;
         gitCommitMergeAndPush({
           cwd: executionWorkspace.cwd,
           credUrl,
           cleanUrl: executionWorkspace.repoUrl,
           branch,
           baseBranch,
-          commitMessage: `${agent.name}: ${issueRef?.title ?? 'completed task'}`,
+          commitMessage: `${agent.name}: ${issueRef?.title ?? 'completed task'}${commitSuffix}`,
         }).then((result) => {
           if (result.warning) {
-            logger.info({ warning: result.warning, branch, baseBranch }, "git push completed with warning");
+            logger.info({ warning: result.warning, branch, baseBranch, outcome }, "git push completed with warning");
           } else if (result.ok) {
-            logger.info({ branch, baseBranch }, "git commit+merge+push succeeded");
+            logger.info({ branch, baseBranch, outcome }, "git commit+merge+push succeeded");
           }
         }).catch((pushErr) => {
-          logger.warn({ err: pushErr, branch }, "git commit+merge+push failed (non-fatal)");
+          logger.warn({ err: pushErr, branch, outcome }, "git commit+merge+push failed (non-fatal)");
         });
       }
     } catch (err) {

@@ -656,6 +656,95 @@ export function projectRoutes(db: Db) {
     }
   });
 
+  // --- Workspace Git Status (pre-preview check) ---
+
+  router.get("/projects/:id/workspace/git-status", async (req, res) => {
+    const project = await svc.getById(req.params.id);
+    if (!project) throw notFound("Project not found");
+    assertCompanyAccess(req, project.companyId);
+
+    const wsDir = resolveWorkspaceDir(project);
+    if (!wsDir) {
+      res.json({ ok: true, isGit: false, message: "No local workspace" });
+      return;
+    }
+
+    const gitDir = path.join(wsDir, ".git");
+    if (!fsSync.existsSync(gitDir)) {
+      res.json({ ok: true, isGit: false, message: "Workspace is not a git repo" });
+      return;
+    }
+
+    const { execFile: execFileCb } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFileCb);
+
+    try {
+      // Check for uncommitted changes (staged + unstaged + untracked)
+      const { stdout: statusOut } = await execFileAsync(
+        "git", ["-C", wsDir, "status", "--porcelain"],
+        { timeout: 10_000 },
+      );
+      const uncommittedFiles = statusOut.trim().split("\n").filter(Boolean);
+      const hasUncommitted = uncommittedFiles.length > 0;
+
+      // Check for unpushed commits
+      let unpushedCount = 0;
+      let hasRemote = false;
+      try {
+        const { stdout: trackingBranch } = await execFileAsync(
+          "git", ["-C", wsDir, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+          { timeout: 5_000 },
+        );
+        hasRemote = !!trackingBranch.trim();
+        if (hasRemote) {
+          const { stdout: logOut } = await execFileAsync(
+            "git", ["-C", wsDir, "log", "@{u}..HEAD", "--oneline"],
+            { timeout: 5_000 },
+          );
+          unpushedCount = logOut.trim().split("\n").filter(Boolean).length;
+        }
+      } catch {
+        // No upstream tracking branch — check if remote exists at all
+        try {
+          const { stdout: remoteOut } = await execFileAsync(
+            "git", ["-C", wsDir, "remote"],
+            { timeout: 5_000 },
+          );
+          hasRemote = !!remoteOut.trim();
+          if (hasRemote) {
+            // Has remote but no tracking — all local commits are unpushed
+            const { stdout: logOut } = await execFileAsync(
+              "git", ["-C", wsDir, "log", "--oneline"],
+              { timeout: 5_000 },
+            );
+            unpushedCount = logOut.trim().split("\n").filter(Boolean).length;
+          }
+        } catch { /* ignore */ }
+      }
+
+      // Check if Dockerfile exists
+      const hasDockerfile = fsSync.existsSync(path.join(wsDir, "Dockerfile"));
+
+      const ready = !hasUncommitted && unpushedCount === 0;
+
+      res.json({
+        ok: true,
+        isGit: true,
+        ready,
+        hasUncommitted,
+        uncommittedCount: uncommittedFiles.length,
+        uncommittedFiles: uncommittedFiles.slice(0, 20), // cap for response size
+        unpushedCount,
+        hasRemote,
+        hasDockerfile,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ ok: false, error: "git_status_failed", message: msg });
+    }
+  });
+
   // --- Workspace Snapshot (for preview) ---
 
   router.post("/projects/:id/workspace/snapshot", async (req, res) => {
