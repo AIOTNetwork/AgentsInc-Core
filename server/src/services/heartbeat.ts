@@ -2433,8 +2433,28 @@ export function heartbeatService(db: Db) {
     } else {
       delete context[PAPERCLIP_WAKE_PAYLOAD_KEY];
     }
-    const existingExecutionWorkspace =
+    let existingExecutionWorkspace =
       issueRef?.executionWorkspaceId ? await executionWorkspacesSvc.getById(issueRef.executionWorkspaceId) : null;
+
+    // Detect workspace directory wipe (e.g., k3s pod redeploy)
+    if (existingExecutionWorkspace?.cwd) {
+      const cwdExists = await fs
+        .stat(existingExecutionWorkspace.cwd)
+        .then((s) => s.isDirectory())
+        .catch(() => false);
+      if (!cwdExists) {
+        logger.warn(
+          { executionWorkspaceId: existingExecutionWorkspace.id, cwd: existingExecutionWorkspace.cwd },
+          "execution workspace directory missing — likely pod redeploy, will re-create",
+        );
+        await executionWorkspacesSvc.update(existingExecutionWorkspace.id, {
+          status: "archived",
+          cleanupReason: "Directory missing after pod redeploy",
+        });
+        existingExecutionWorkspace = null;
+      }
+    }
+
     const shouldReuseExisting =
       issueRef?.executionWorkspacePreference === "reuse_existing" &&
       existingExecutionWorkspace &&
@@ -2922,6 +2942,27 @@ export function heartbeatService(db: Db) {
           "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
       }
+      // Periodic workspace auto-sync during long runs (every 5 min)
+      // Minimizes data loss if k3s pod is redeployed mid-run
+      const PERIODIC_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+      let periodicSyncTimer: ReturnType<typeof setInterval> | null = null;
+      if (executionWorkspace.cwd && executionWorkspace.repoUrl) {
+        periodicSyncTimer = setInterval(() => {
+          if (!executionWorkspace.cwd || !executionWorkspace.repoUrl) return;
+          const github = githubAppService(db);
+          github.getCredentialUrl(agent.companyId, executionWorkspace.repoUrl!).then((syncCredUrl) => {
+            gitCommitMergeAndPush({
+              cwd: executionWorkspace.cwd!,
+              credUrl: syncCredUrl,
+              cleanUrl: executionWorkspace.repoUrl!,
+              branch: executionWorkspace.branchName ?? "main",
+              baseBranch: executionWorkspace.repoRef ?? "main",
+              commitMessage: `${agent.name}: work in progress (auto-sync)`,
+            }).catch((err) => logger.warn({ err }, "periodic workspace sync failed"));
+          }).catch((err) => logger.warn({ err }, "periodic sync credential fetch failed"));
+        }, PERIODIC_SYNC_INTERVAL_MS);
+      }
+
       const adapterResult = await adapter.execute({
         runId: run.id,
         agent,
@@ -2935,6 +2976,10 @@ export function heartbeatService(db: Db) {
         },
         authToken: authToken ?? undefined,
       });
+
+      // Clear periodic sync timer now that the run is complete
+      if (periodicSyncTimer) { clearInterval(periodicSyncTimer); periodicSyncTimer = null; }
+
       const adapterManagedRuntimeServices = adapterResult.runtimeServices
         ? await persistAdapterManagedRuntimeServices({
             db,
@@ -3172,6 +3217,9 @@ export function heartbeatService(db: Db) {
         });
       }
     } catch (err) {
+      // Clear periodic sync timer on error
+      if (periodicSyncTimer) { clearInterval(periodicSyncTimer); periodicSyncTimer = null; }
+
       const message = redactCurrentUserText(
         err instanceof Error ? err.message : "Unknown adapter failure",
         await getCurrentUserRedactionOptions(),
