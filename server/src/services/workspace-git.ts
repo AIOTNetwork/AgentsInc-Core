@@ -19,6 +19,34 @@ interface GitResult {
   warning?: string;
 }
 
+export interface GitMergeResult extends GitResult {
+  conflicted?: boolean;
+  conflictFiles?: string[];
+}
+
+// ── Per-directory mutex ─────────────────────────────────────────────────
+
+const directoryLocks = new Map<string, Promise<void>>();
+
+/**
+ * Serialize git operations on the same directory to prevent index corruption.
+ */
+async function withDirectoryLock<T>(cwd: string, fn: () => Promise<T>): Promise<T> {
+  const key = path.resolve(cwd);
+  while (directoryLocks.has(key)) {
+    await directoryLocks.get(key);
+  }
+  let resolve!: () => void;
+  const lock = new Promise<void>((r) => { resolve = r; });
+  directoryLocks.set(key, lock);
+  try {
+    return await fn();
+  } finally {
+    directoryLocks.delete(key);
+    resolve();
+  }
+}
+
 /**
  * Fetch latest from remote and reset to the target branch.
  * Used before agent runs to ensure fresh code.
@@ -69,7 +97,86 @@ export async function gitClone(
 }
 
 /**
- * Commit all changes, push the branch, merge to base branch, push base.
+ * Stage and commit all changes in the working directory.
+ * Local only — does not push or merge anything.
+ */
+export async function gitCommitLocal(opts: {
+  cwd: string;
+  commitMessage: string;
+}): Promise<GitResult> {
+  return withDirectoryLock(opts.cwd, async () => {
+    const { cwd, commitMessage } = opts;
+    try {
+      await execFile("git", ["-C", cwd, "add", "-A"], { timeout: GIT_TIMEOUT });
+      const { stdout: status } = await execFile("git", ["-C", cwd, "status", "--porcelain"], { timeout: 10_000 });
+      if (!status.trim()) {
+        return { ok: true, warning: "nothing to commit" };
+      }
+      await execFile("git", ["-C", cwd, "commit", "-m", commitMessage], { timeout: GIT_TIMEOUT });
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, warning: `git commit failed: ${msg}` };
+    }
+  });
+}
+
+/**
+ * Merge a worktree branch into the base branch locally, then push base to remote.
+ * No feature branches are pushed — only the base branch (e.g. main) reaches origin.
+ */
+export async function gitMergeLocalAndPushBase(opts: {
+  worktreeCwd: string;
+  credUrl: string;
+  branch: string;
+  baseBranch: string;
+}): Promise<GitMergeResult> {
+  const { worktreeCwd, credUrl, branch, baseBranch } = opts;
+
+  const mainCwd = await resolveMainRepoCwd(worktreeCwd);
+  if (!mainCwd) {
+    return { ok: false, warning: "main repo not found for merge", conflicted: false };
+  }
+
+  return withDirectoryLock(mainCwd, async () => {
+    try {
+      await execFile("git", ["-C", mainCwd, "remote", "set-url", "origin", credUrl], { timeout: GIT_TIMEOUT });
+      await execFile("git", ["-C", mainCwd, "fetch", "origin"], { timeout: GIT_TIMEOUT });
+      await execFile("git", ["-C", mainCwd, "checkout", baseBranch], { timeout: GIT_TIMEOUT });
+      await execFile("git", ["-C", mainCwd, "pull", "origin", baseBranch, "--ff-only"], { timeout: GIT_TIMEOUT }).catch(() => {});
+
+      try {
+        await execFile("git", ["-C", mainCwd, "merge", branch, "-m", `merge ${branch} into ${baseBranch}`], { timeout: GIT_TIMEOUT });
+      } catch (mergeErr) {
+        const { stdout: conflictList } = await execFile(
+          "git", ["-C", mainCwd, "diff", "--name-only", "--diff-filter=U"],
+          { timeout: 10_000 },
+        ).catch(() => ({ stdout: "" }));
+        const conflictFiles = conflictList.trim().split("\n").filter(Boolean);
+        await execFile("git", ["-C", mainCwd, "merge", "--abort"], { timeout: 10_000 }).catch(() => {});
+        await clearRemoteCredentials(mainCwd).catch(() => {});
+        const msg = mergeErr instanceof Error ? mergeErr.message : String(mergeErr);
+        logger.warn({ err: mergeErr, branch, baseBranch, conflictFiles }, "merge to base conflicted");
+        return { ok: false, conflicted: true, conflictFiles, warning: msg };
+      }
+
+      await execFile("git", ["-C", mainCwd, "push", "origin", baseBranch], { timeout: GIT_TIMEOUT });
+      await clearRemoteCredentials(mainCwd).catch(() => {});
+      return { ok: true, conflicted: false };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn({ err, branch, baseBranch }, "merge+push base failed");
+      await execFile("git", ["-C", mainCwd, "merge", "--abort"], { timeout: 10_000 }).catch(() => {});
+      await clearRemoteCredentials(mainCwd).catch(() => {});
+      return { ok: false, conflicted: false, warning: msg };
+    }
+  });
+}
+
+/**
+ * Commit locally, merge into base, push base to remote.
+ * Backward-compatible wrapper — existing heartbeat code continues to work.
+ * No feature branches are pushed to remote.
  */
 export async function gitCommitMergeAndPush(opts: {
   cwd: string;
@@ -78,109 +185,57 @@ export async function gitCommitMergeAndPush(opts: {
   branch: string;
   baseBranch: string;
   commitMessage: string;
-}): Promise<GitResult> {
-  const { cwd, credUrl, cleanUrl, branch, baseBranch, commitMessage } = opts;
+}): Promise<GitMergeResult> {
+  const commitResult = await gitCommitLocal({
+    cwd: opts.cwd,
+    commitMessage: opts.commitMessage,
+  });
 
-  try {
-    // 1. Stage and commit on the current branch
-    await execFile("git", ["-C", cwd, "add", "-A"], { timeout: GIT_TIMEOUT });
-
-    const { stdout: status } = await execFile("git", ["-C", cwd, "status", "--porcelain"], { timeout: 10_000 });
-    if (!status.trim()) {
-      return { ok: true, warning: "nothing to commit" };
-    }
-
-    await execFile("git", ["-C", cwd, "commit", "-m", commitMessage], { timeout: GIT_TIMEOUT });
-
-    // 2. Set credentialed remote
-    await execFile("git", ["-C", cwd, "remote", "set-url", "origin", credUrl], { timeout: GIT_TIMEOUT });
-
-    // 3. Push the branch
-    await execFile("git", ["-C", cwd, "push", "origin", `HEAD:${branch}`, "--force-with-lease"], { timeout: GIT_TIMEOUT });
-
-    // 4. Merge to base branch from the main repo (not the worktree)
-    const mergeResult = await mergeToBase(cwd, credUrl, branch, baseBranch);
-
-    // 5. Clear credentials
-    await clearRemoteCredentials(cwd).catch(() => {});
-
-    if (!mergeResult.ok) {
-      return { ok: true, warning: `branch pushed but merge failed: ${mergeResult.warning}` };
-    }
-
-    return { ok: true };
-  } catch (err) {
-    await clearRemoteCredentials(cwd).catch(() => {});
-    const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, warning: `git commit+push failed: ${msg}` };
+  if (!commitResult.ok) {
+    return { ...commitResult, conflicted: false };
   }
+  if (commitResult.warning === "nothing to commit") {
+    return { ...commitResult, conflicted: false };
+  }
+
+  const mergeResult = await gitMergeLocalAndPushBase({
+    worktreeCwd: opts.cwd,
+    credUrl: opts.credUrl,
+    branch: opts.branch,
+    baseBranch: opts.baseBranch,
+  });
+
+  if (!mergeResult.ok) {
+    return {
+      ok: false,
+      warning: `committed locally but merge to ${opts.baseBranch} failed: ${mergeResult.warning}`,
+      conflicted: mergeResult.conflicted,
+      conflictFiles: mergeResult.conflictFiles,
+    };
+  }
+
+  return { ok: true, conflicted: false };
 }
 
 /**
- * Merge a branch into the base branch using the main repo checkout.
- * For worktrees, we need to operate on the main repo, not the worktree.
+ * Resolve the main repo root from a worktree path.
  */
-async function mergeToBase(
-  worktreeCwd: string,
-  credUrl: string,
-  branch: string,
-  baseBranch: string,
-): Promise<GitResult> {
+async function resolveMainRepoCwd(worktreeCwd: string): Promise<string | null> {
   try {
-    // Find the main repo root (git-common-dir for worktrees)
     const { stdout: commonDir } = await execFile(
       "git", ["-C", worktreeCwd, "rev-parse", "--git-common-dir"],
       { timeout: 10_000 },
     );
     const mainRepoGitDir = commonDir.trim();
-    // The repo root is the parent of the .git directory
     const mainCwd = mainRepoGitDir.endsWith(".git")
       ? path.resolve(worktreeCwd, mainRepoGitDir, "..")
       : path.resolve(worktreeCwd, mainRepoGitDir, "..");
-
-    // Verify main repo exists
     if (!fs.existsSync(path.join(mainCwd, ".git")) && !fs.existsSync(mainCwd)) {
-      return { ok: false, warning: "main repo not found for merge" };
+      return null;
     }
-
-    // Set credentials on main repo
-    await execFile("git", ["-C", mainCwd, "remote", "set-url", "origin", credUrl], { timeout: GIT_TIMEOUT });
-
-    // Fetch latest
-    await execFile("git", ["-C", mainCwd, "fetch", "origin"], { timeout: GIT_TIMEOUT });
-
-    // Checkout base branch
-    await execFile("git", ["-C", mainCwd, "checkout", baseBranch], { timeout: GIT_TIMEOUT });
-
-    // Pull latest base
-    await execFile("git", ["-C", mainCwd, "pull", "origin", baseBranch, "--ff-only"], { timeout: GIT_TIMEOUT }).catch(() => {});
-
-    // Merge the branch
-    await execFile("git", ["-C", mainCwd, "merge", branch, "-m", `merge ${branch} into ${baseBranch}`], { timeout: GIT_TIMEOUT });
-
-    // Push base branch
-    await execFile("git", ["-C", mainCwd, "push", "origin", baseBranch], { timeout: GIT_TIMEOUT });
-
-    // Clear credentials
-    await clearRemoteCredentials(mainCwd).catch(() => {});
-
-    return { ok: true };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.warn({ err, branch, baseBranch }, "merge to base failed");
-
-    // Try to abort the merge if it's in a conflict state
-    try {
-      const { stdout: commonDir } = await execFile(
-        "git", ["-C", worktreeCwd, "rev-parse", "--git-common-dir"],
-        { timeout: 10_000 },
-      );
-      const mainCwd = path.resolve(worktreeCwd, commonDir.trim(), "..");
-      await execFile("git", ["-C", mainCwd, "merge", "--abort"], { timeout: 10_000 }).catch(() => {});
-      await clearRemoteCredentials(mainCwd).catch(() => {});
-    } catch { /* best effort */ }
-
-    return { ok: false, warning: msg };
+    return mainCwd;
+  } catch {
+    return null;
   }
 }
 
