@@ -17,6 +17,7 @@ import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { startRuntimeServicesForWorkspaceControl, stopRuntimeServicesForProjectWorkspace } from "../services/workspace-runtime.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { createWorkspaceSnapshot, getWorkspaceS3Sync } from "../services/workspace-snapshot.js";
+import { gitClone, gitFetchAndReset } from "../services/workspace-git.js";
 import fsSync from "node:fs";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
@@ -499,6 +500,72 @@ export function projectRoutes(db: Db) {
     return null;
   }
 
+  /**
+   * If the workspace directory is missing (e.g. after a redeploy) but the project
+   * has a git repo URL, clone it to the managed workspace path so that previews,
+   * file browsing, and snapshots work without manual intervention.
+   */
+  async function ensureWorkspaceCloned(project: {
+    id: string;
+    companyId: string;
+    codebase: { repoUrl: string | null; managedFolder: string; effectiveLocalFolder: string | null };
+  }): Promise<string | null> {
+    // Already exists on disk — nothing to do
+    const existing = resolveWorkspaceDir(project);
+    if (existing) return existing;
+
+    const repoUrl = project.codebase.repoUrl;
+    if (!repoUrl) return null;
+
+    const cwd = project.codebase.managedFolder;
+    await fsPromises.mkdir(path.dirname(cwd), { recursive: true });
+
+    // Check if directory exists but is not a git checkout (e.g. leftover empty dir)
+    const stats = await fsPromises.stat(cwd).catch(() => null);
+    const gitDirExists = await fsPromises
+      .stat(path.resolve(cwd, ".git"))
+      .then((entry) => entry.isDirectory())
+      .catch(() => false);
+
+    if (gitDirExists) {
+      // Workspace dir exists with .git — just fetch + reset to latest
+      const defaultBranch = await getDefaultBranch(cwd).catch(() => "main");
+      const credUrl = await getCredentialUrl(project.companyId, repoUrl);
+      await gitFetchAndReset(cwd, credUrl, defaultBranch);
+      return cwd;
+    }
+
+    if (stats) {
+      const entries = await fsPromises.readdir(cwd).catch(() => []);
+      if (entries.length > 0) return cwd; // non-empty, non-git dir — use as-is
+      await fsPromises.rm(cwd, { recursive: true, force: true });
+    }
+
+    // Clone the repo
+    const credUrl = await getCredentialUrl(project.companyId, repoUrl);
+    const result = await gitClone(credUrl, cwd, repoUrl);
+    if (!result.ok) return null;
+    return cwd;
+  }
+
+  async function getDefaultBranch(cwd: string): Promise<string> {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+    const { stdout } = await execFileAsync("git", ["-C", cwd, "symbolic-ref", "--short", "HEAD"], { timeout: 5000 });
+    return stdout.trim() || "main";
+  }
+
+  async function getCredentialUrl(companyId: string, repoUrl: string): Promise<string> {
+    try {
+      const { githubAppService } = await import("../services/github-app.js");
+      const github = githubAppService(db);
+      return await github.getCredentialUrl(companyId, repoUrl);
+    } catch {
+      return repoUrl;
+    }
+  }
+
   const FILE_EXCLUDES = new Set(["node_modules", ".git", ".next", ".nuxt", "dist", "build", ".cache", ".turbo", ".vercel", "__pycache__", "coverage", ".nyc_output"]);
 
   interface FileEntry { name: string; path: string; type: "file" | "dir"; size?: number }
@@ -532,7 +599,7 @@ export function projectRoutes(db: Db) {
     if (!project) throw notFound("Project not found");
     assertCompanyAccess(req, project.companyId);
 
-    const root = resolveWorkspaceDir(project);
+    const root = resolveWorkspaceDir(project) ?? await ensureWorkspaceCloned(project);
     if (!root) {
       res.status(404).json({ error: "workspace_not_found", files: [] });
       return;
@@ -548,7 +615,7 @@ export function projectRoutes(db: Db) {
     if (!project) throw notFound("Project not found");
     assertCompanyAccess(req, project.companyId);
 
-    const root = resolveWorkspaceDir(project);
+    const root = resolveWorkspaceDir(project) ?? await ensureWorkspaceCloned(project);
     if (!root) { res.status(404).json({ error: "workspace_not_found" }); return; }
 
     const filePath = typeof req.query.path === "string" ? req.query.path : "";
@@ -568,12 +635,36 @@ export function projectRoutes(db: Db) {
     }
   });
 
+  // --- Ensure Workspace (clone if missing after redeploy) ---
+
+  router.post("/projects/:id/workspace/ensure", async (req, res) => {
+    const project = await svc.getById(req.params.id);
+    if (!project) throw notFound("Project not found");
+    assertCompanyAccess(req, project.companyId);
+
+    const existing = resolveWorkspaceDir(project);
+    if (existing) {
+      res.json({ ok: true, cwd: existing, cloned: false });
+      return;
+    }
+
+    const cloned = await ensureWorkspaceCloned(project);
+    if (cloned) {
+      res.json({ ok: true, cwd: cloned, cloned: true });
+    } else {
+      res.status(422).json({ error: "no_repo", message: "Project has no git repo to clone" });
+    }
+  });
+
   // --- Workspace Snapshot (for preview) ---
 
   router.post("/projects/:id/workspace/snapshot", async (req, res) => {
     const project = await svc.getById(req.params.id);
     if (!project) throw notFound("Project not found");
     assertCompanyAccess(req, project.companyId);
+
+    // Ensure workspace is cloned if missing (e.g. after a redeploy)
+    await ensureWorkspaceCloned(project);
 
     try {
       const result = await createWorkspaceSnapshot(project);
