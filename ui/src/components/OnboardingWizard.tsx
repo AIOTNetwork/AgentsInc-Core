@@ -612,10 +612,8 @@ export function OnboardingWizard() {
     <Dialog
       open={effectiveOnboardingOpen}
       onOpenChange={(open) => {
-        if (!open) {
-          setRouteDismissed(true);
-          handleClose();
-        }
+        // Only allow closing via the explicit close button, not outside clicks
+        if (!open) return;
       }}
     >
       <DialogPortal>
