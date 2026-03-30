@@ -755,6 +755,35 @@ export function projectRoutes(db: Db) {
     // Ensure workspace is cloned if missing (e.g. after a redeploy)
     await ensureWorkspaceCloned(project);
 
+    // Auto-push uncommitted changes to git before snapshot (non-fatal)
+    const snapshotWsDir = resolveWorkspaceDir(project);
+    if (snapshotWsDir && fsSync.existsSync(path.join(snapshotWsDir, ".git")) && project.codebase.repoUrl) {
+      try {
+        const snapshotCredUrl = await getCredentialUrl(project.companyId, project.codebase.repoUrl);
+        const snapshotBranch = await getDefaultBranch(snapshotWsDir).catch(() => "main");
+        const snapshotBaseBranch = project.codebase.repoRef ?? "main";
+
+        const commitResult = await gitCommitLocal({
+          cwd: snapshotWsDir,
+          commitMessage: `workspace sync before preview: ${project.name}`,
+        });
+
+        if (commitResult.ok && commitResult.warning !== "nothing to commit") {
+          const mergeResult = await gitMergeLocalAndPushBase({
+            worktreeCwd: snapshotWsDir,
+            credUrl: snapshotCredUrl,
+            branch: snapshotBranch,
+            baseBranch: snapshotBaseBranch,
+          });
+          if (mergeResult.warning) {
+            logger.info({ warning: mergeResult.warning, projectId: project.id }, "pre-snapshot merge+push warning");
+          }
+        }
+      } catch (pushErr) {
+        logger.warn({ err: pushErr, projectId: project.id }, "pre-snapshot git sync failed (non-fatal)");
+      }
+    }
+
     try {
       const result = await createWorkspaceSnapshot(project);
       res.json(result);
