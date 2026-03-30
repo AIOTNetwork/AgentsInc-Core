@@ -135,5 +135,19 @@ export function githubRoutes(db: Db) {
     res.json({ ok: true });
   });
 
+  // Get a credential-injected clone URL for a repo (short-lived token)
+  router.post("/github/credential-url", async (req, res) => {
+    const companyId = typeof req.body.companyId === "string" ? req.body.companyId : null;
+    const repoUrl = typeof req.body.repoUrl === "string" ? req.body.repoUrl : null;
+    if (!companyId || !repoUrl) {
+      res.status(400).json({ error: "companyId and repoUrl required" });
+      return;
+    }
+    assertCompanyAccess(req, companyId);
+
+    const credentialUrl = await github.getCredentialUrl(companyId, repoUrl);
+    res.json({ credentialUrl });
+  });
+
   return router;
 }
