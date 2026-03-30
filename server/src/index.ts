@@ -36,7 +36,7 @@ import {
 } from "./services/index.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
-import { setInstanceAdminEmails } from "./instance-admin-emails.js";
+import { setInstanceAdminEmails, setDemoEmails } from "./instance-admin-emails.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
@@ -83,6 +83,7 @@ export async function startServer(): Promise<StartedServer> {
   let config = loadConfig();
   initTelemetry({ enabled: config.telemetryEnabled });
   setInstanceAdminEmails(config.authInstanceAdminEmails);
+  setDemoEmails(config.deploymentExposure !== "public" ? config.authDemoEmails : []);
   if (process.env.PAPERCLIP_SECRETS_PROVIDER === undefined) {
     process.env.PAPERCLIP_SECRETS_PROVIDER = config.secretsProvider;
   }

@@ -71,6 +71,22 @@ export function AuthPage() {
     }
   }, [sessionQuery.data, exchanging, navigate, nextPath, queryClient]);
 
+  // Demo login mutation (instant sign-in for configured demo emails)
+  const demoLoginMutation = useMutation({
+    mutationFn: async () => {
+      return authApi.demoLogin({ email: email.trim(), callbackURL: nextPath });
+    },
+    onSuccess: (url) => {
+      setError(null);
+      // Navigate to the magic link verification URL — better-auth will set
+      // proper signed session cookies and redirect to the callbackURL.
+      window.location.href = url;
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Demo login failed");
+    },
+  });
+
   // Magic link mutation
   const magicLinkMutation = useMutation({
     mutationFn: async () => {
@@ -108,7 +124,12 @@ export function AuthPage() {
   const config: AuthConfig | null = configQuery.data ?? null;
   const hasAnyMethod = config ? config.magicLink || config.google || config.github || config.emailPassword : false;
   const hasSocial = config ? config.google || config.github : false;
-  const isPending = magicLinkMutation.isPending || socialMutation.isPending;
+  const demoEmailSet = useMemo(
+    () => new Set((config?.demoEmails ?? []).map((e) => e.toLowerCase())),
+    [config?.demoEmails],
+  );
+  const isDemo = demoEmailSet.has(email.trim().toLowerCase());
+  const isPending = magicLinkMutation.isPending || socialMutation.isPending || demoLoginMutation.isPending;
 
   // Email+password fallback mutation
   const emailPasswordMutation = useMutation({
@@ -255,7 +276,11 @@ export function AuthPage() {
                       onSubmit={(event) => {
                         event.preventDefault();
                         if (isPending || !email.trim()) return;
-                        magicLinkMutation.mutate();
+                        if (isDemo) {
+                          demoLoginMutation.mutate();
+                        } else {
+                          magicLinkMutation.mutate();
+                        }
                       }}
                     >
                       <div className="space-y-4">
@@ -280,7 +305,9 @@ export function AuthPage() {
                           disabled={isPending || !email.trim()}
                           className="w-full"
                         >
-                          {magicLinkMutation.isPending ? "Sending..." : "Continue with Email"}
+                          {(magicLinkMutation.isPending || demoLoginMutation.isPending)
+                            ? (isDemo ? "Signing in..." : "Sending...")
+                            : (isDemo ? "Demo Sign In" : "Continue with Email")}
                         </Button>
                       </div>
                     </form>

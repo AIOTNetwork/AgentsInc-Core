@@ -50,6 +50,7 @@ export type AuthConfig = {
   google: boolean;
   emailPassword: boolean;
   github: boolean;
+  demoEmails?: string[];
 };
 
 export const authApi = {
@@ -133,6 +134,27 @@ export const authApi = {
       throw new Error((payload as { error?: string } | null)?.error ?? "Failed to exchange session");
     }
     return payload as { token: string; keyId: string; expiresAt: string };
+  },
+
+  demoLogin: async (input: { email: string; callbackURL?: string }): Promise<string> => {
+    // Step 1: trigger magic link (server captures URL instead of emailing for demo emails)
+    await authPost("/sign-in/magic-link", {
+      email: input.email,
+      callbackURL: input.callbackURL ?? "/",
+    });
+    // Step 2: retrieve the captured verification URL
+    const res = await fetch("/api/demo-login", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: input.email }),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      throw new Error((payload as { error?: string } | null)?.error ?? "Demo login failed");
+    }
+    const data = await res.json() as { url: string };
+    return data.url;
   },
 
   getAuthConfig: async (): Promise<AuthConfig> => {

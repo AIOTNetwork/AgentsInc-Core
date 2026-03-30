@@ -49,6 +49,8 @@ import { createPluginHostServiceCleanup } from "./services/plugin-host-service-c
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
+import { isDemoEmail } from "./instance-admin-emails.js";
+import { takeDemoMagicLinkUrl } from "./auth/better-auth.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 const FEEDBACK_EXPORT_FLUSH_INTERVAL_MS = 5_000;
@@ -164,6 +166,24 @@ export async function createApp(
       },
     });
   });
+  // Demo login — retrieves the magic link URL captured during sendMagicLink for demo emails.
+  // The client calls /api/auth/sign-in/magic-link first (which skips email sending for demo
+  // emails and stores the URL), then calls this endpoint to get the verification URL and
+  // navigates to it so better-auth sets proper signed session cookies.
+  app.post("/api/demo-login", async (req, res) => {
+    const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    if (!email || !isDemoEmail(email)) {
+      res.status(403).json({ error: "Demo login not available for this email" });
+      return;
+    }
+    const url = takeDemoMagicLinkUrl(email);
+    if (!url) {
+      res.status(404).json({ error: "No pending magic link for this email. Send the magic link first." });
+      return;
+    }
+    res.json({ ok: true, url });
+  });
+
   if (opts.betterAuthHandler) {
     app.all("/api/auth/*authPath", opts.betterAuthHandler);
   }

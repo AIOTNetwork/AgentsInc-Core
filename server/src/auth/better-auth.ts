@@ -14,6 +14,18 @@ import {
   authVerifications,
 } from "@paperclipai/db";
 import type { Config } from "../config.js";
+import { isDemoEmail } from "../instance-admin-emails.js";
+
+/** Stores captured magic link URLs for demo emails (keyed by lowercase email). */
+const demoMagicLinkUrls = new Map<string, string>();
+
+/** Retrieve and remove the stored magic link URL for a demo email. */
+export function takeDemoMagicLinkUrl(email: string): string | null {
+  const key = email.toLowerCase();
+  const url = demoMagicLinkUrls.get(key);
+  if (url) demoMagicLinkUrls.delete(key);
+  return url ?? null;
+}
 
 export type BetterAuthSessionUser = {
   id: string;
@@ -127,6 +139,11 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
         ? [
           magicLink({
             sendMagicLink: async ({ email, url: rawUrl }: { email: string; url: string }, ctx: any) => {
+              // For demo emails, capture the URL instead of sending an email
+              if (isDemoEmail(email)) {
+                demoMagicLinkUrls.set(email.toLowerCase(), rawUrl);
+                return;
+              }
               // Rewrite the verification URL origin to match the requester's origin
               // so the magic link goes through the same proxy (e.g. Office's Caddy)
               // and the session cookie is set on the correct domain.

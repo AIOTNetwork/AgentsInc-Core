@@ -59,6 +59,7 @@ import {
   claimBoardOwnership,
   inspectBoardClaimChallenge
 } from "../board-claim.js";
+import { getDemoEmails } from "../instance-admin-emails.js";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -2947,11 +2948,13 @@ export function accessRoutes(
     const google = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
     const github = !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
     const hasAnyNewMethod = magicLink || google || github;
+    const demoEmails = Array.from(getDemoEmails());
     res.json({
       magicLink,
       google,
       github,
       emailPassword: !hasAnyNewMethod,
+      demoEmails,
     });
   });
 
