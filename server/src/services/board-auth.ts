@@ -7,9 +7,9 @@ import {
   cliAuthChallenges,
   companies,
   companyMemberships,
-  instanceUserRoles,
 } from "@paperclipai/db";
 import { conflict, forbidden, notFound } from "../errors.js";
+import { isEmailInstanceAdmin } from "../instance-admin-emails.js";
 
 export const BOARD_API_KEY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const CLI_AUTH_CHALLENGE_TTL_MS = 10 * 60 * 1000;
@@ -51,7 +51,7 @@ function challengeStatusForRow(row: typeof cliAuthChallenges.$inferSelect): CliA
 
 export function boardAuthService(db: Db) {
   async function resolveBoardAccess(userId: string) {
-    const [user, memberships, adminRole] = await Promise.all([
+    const [user, memberships] = await Promise.all([
       db
         .select({
           id: authUsers.id,
@@ -72,17 +72,12 @@ export function boardAuthService(db: Db) {
           ),
         )
         .then((rows) => rows.map((row) => row.companyId)),
-      db
-        .select({ id: instanceUserRoles.id })
-        .from(instanceUserRoles)
-        .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
-        .then((rows) => rows[0] ?? null),
     ]);
 
     return {
       user,
       companyIds: memberships,
-      isInstanceAdmin: Boolean(adminRole),
+      isInstanceAdmin: isEmailInstanceAdmin(user?.email),
     };
   }
 

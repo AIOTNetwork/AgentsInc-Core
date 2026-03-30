@@ -36,6 +36,7 @@ import {
 } from "./services/index.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
+import { setInstanceAdminEmails } from "./instance-admin-emails.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
@@ -81,6 +82,7 @@ export interface StartedServer {
 export async function startServer(): Promise<StartedServer> {
   let config = loadConfig();
   initTelemetry({ enabled: config.telemetryEnabled });
+  setInstanceAdminEmails(config.authInstanceAdminEmails);
   if (process.env.PAPERCLIP_SECRETS_PROVIDER === undefined) {
     process.env.PAPERCLIP_SECRETS_PROVIDER = config.secretsProvider;
   }
@@ -468,20 +470,6 @@ export async function startServer(): Promise<StartedServer> {
     await ensureLocalTrustedBoardPrincipal(db as any);
   }
   if (config.deploymentMode === "authenticated") {
-    // Ensure all existing users have instance_admin role (every user is their own admin)
-    const existingUsers = await db.select({ id: authUsers.id }).from(authUsers);
-    for (const user of existingUsers) {
-      const hasRole = await db
-        .select({ id: instanceUserRoles.id })
-        .from(instanceUserRoles)
-        .where(and(eq(instanceUserRoles.userId, user.id), eq(instanceUserRoles.role, "instance_admin")))
-        .then((rows: Array<{ id: string }>) => rows[0] ?? null);
-      if (!hasRole) {
-        await db.insert(instanceUserRoles).values({ userId: user.id, role: "instance_admin" });
-        logger.info({ userId: user.id }, "Granted instance_admin to existing user");
-      }
-    }
-
     const {
       createBetterAuthHandler,
       createBetterAuthInstance,

@@ -61,6 +61,7 @@ export interface Config {
   authBaseUrlMode: AuthBaseUrlMode;
   authPublicBaseUrl: string | undefined;
   authDisableSignUp: boolean;
+  authInstanceAdminEmails: string[];
   databaseMode: DatabaseMode;
   databaseUrl: string | undefined;
   embeddedPostgresDataDir: string;
@@ -182,6 +183,16 @@ export function loadConfig(): Config {
     disableSignUpFromEnv !== undefined
       ? disableSignUpFromEnv === "true"
       : (fileConfig?.auth?.disableSignUp ?? false);
+  const instanceAdminEmailsFromEnvRaw = process.env.PAPERCLIP_AUTH_INSTANCE_ADMIN_EMAILS;
+  const instanceAdminEmailsFromEnv = instanceAdminEmailsFromEnvRaw
+    ? instanceAdminEmailsFromEnvRaw
+        .split(",")
+        .map((e) => e.trim().toLowerCase())
+        .filter((e) => e.length > 0)
+    : null;
+  const authInstanceAdminEmails: string[] = (
+    instanceAdminEmailsFromEnv ?? fileConfig?.auth?.instanceAdminEmails ?? []
+  ).map((e) => e.toLowerCase());
   const allowedHostnamesFromEnvRaw = process.env.PAPERCLIP_ALLOWED_HOSTNAMES;
   const allowedHostnamesFromEnv = allowedHostnamesFromEnvRaw
     ? allowedHostnamesFromEnvRaw
@@ -244,6 +255,7 @@ export function loadConfig(): Config {
     authBaseUrlMode,
     authPublicBaseUrl,
     authDisableSignUp,
+    authInstanceAdminEmails,
     databaseMode: fileDatabaseMode,
     databaseUrl: process.env.DATABASE_URL ?? fileDbUrl,
     embeddedPostgresDataDir: resolveHomeAwarePath(

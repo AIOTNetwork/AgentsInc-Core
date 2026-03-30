@@ -1,10 +1,12 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  authUsers,
   companyMemberships,
   instanceUserRoles,
   principalPermissionGrants,
 } from "@paperclipai/db";
+import { isEmailInstanceAdmin } from "../instance-admin-emails.js";
 import type { PermissionKey, PrincipalType } from "@paperclipai/shared";
 
 type MembershipRow = typeof companyMemberships.$inferSelect;
@@ -16,12 +18,12 @@ type GrantInput = {
 export function accessService(db: Db) {
   async function isInstanceAdmin(userId: string | null | undefined): Promise<boolean> {
     if (!userId) return false;
-    const row = await db
-      .select({ id: instanceUserRoles.id })
-      .from(instanceUserRoles)
-      .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
+    const user = await db
+      .select({ email: authUsers.email })
+      .from(authUsers)
+      .where(eq(authUsers.id, userId))
       .then((rows) => rows[0] ?? null);
-    return Boolean(row);
+    return isEmailInstanceAdmin(user?.email);
   }
 
   async function getMembership(
@@ -72,6 +74,8 @@ export function accessService(db: Db) {
   ): Promise<boolean> {
     if (!userId) return false;
     if (await isInstanceAdmin(userId)) return true;
+    const membership = await getMembership(companyId, "user", userId);
+    if (membership?.status === "active" && membership.membershipRole === "owner") return true;
     return hasPermission(companyId, "user", userId, permissionKey);
   }
 

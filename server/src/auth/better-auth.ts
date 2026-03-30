@@ -12,7 +12,6 @@ import {
   authSessions,
   authUsers,
   authVerifications,
-  instanceUserRoles,
 } from "@paperclipai/db";
 import type { Config } from "../config.js";
 
@@ -191,23 +190,6 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
         ]
         : []),
     ],
-    // Auto-grant instance_admin to every new user (each user is their own instance admin)
-    databaseHooks: {
-      user: {
-        create: {
-          after: async (user: { id: string }) => {
-            try {
-              await db.insert(instanceUserRoles).values({
-                userId: user.id,
-                role: "instance_admin",
-              });
-            } catch {
-              // Role may already exist (e.g. re-creation), ignore
-            }
-          },
-        },
-      },
-    },
     ...(isHttpOnly ? { advanced: { useSecureCookies: false } } : {}),
   };
 

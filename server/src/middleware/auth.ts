@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import type { Request, RequestHandler } from "express";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agentApiKeys, agents, companyMemberships, instanceUserRoles } from "@paperclipai/db";
+import { agentApiKeys, agents, authUsers, companyMemberships } from "@paperclipai/db";
+import { isEmailInstanceAdmin } from "../instance-admin-emails.js";
 import { verifyLocalAgentJwt } from "../agent-auth-jwt.js";
 import type { DeploymentMode } from "@paperclipai/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
@@ -42,11 +43,11 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
         }
         if (session?.user?.id) {
           const userId = session.user.id;
-          const [roleRow, memberships] = await Promise.all([
+          const [userRow, memberships] = await Promise.all([
             db
-              .select({ id: instanceUserRoles.id })
-              .from(instanceUserRoles)
-              .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
+              .select({ email: authUsers.email })
+              .from(authUsers)
+              .where(eq(authUsers.id, userId))
               .then((rows) => rows[0] ?? null),
             db
               .select({ companyId: companyMemberships.companyId })
@@ -59,11 +60,12 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
                 ),
               ),
           ]);
+          const isAdmin = isEmailInstanceAdmin(userRow?.email);
           req.actor = {
             type: "board",
             userId,
             companyIds: memberships.map((row) => row.companyId),
-            isInstanceAdmin: Boolean(roleRow),
+            isInstanceAdmin: isAdmin,
             runId: runIdHeader ?? undefined,
             source: "session",
           };
