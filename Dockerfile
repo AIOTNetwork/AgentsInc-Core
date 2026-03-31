@@ -71,6 +71,7 @@ RUN pnpm --filter @paperclipai/ui build
 COPY server/ server/
 COPY cli/ cli/
 COPY skills/ skills/
+COPY scripts/ scripts/
 RUN pnpm --filter @paperclipai/server build
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
 
