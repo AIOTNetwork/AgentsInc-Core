@@ -2769,6 +2769,7 @@ export function heartbeatService(db: Db) {
     let handle: RunLogHandle | null = null;
     let stdoutExcerpt = "";
     let stderrExcerpt = "";
+    let periodicSyncTimer: ReturnType<typeof setInterval> | null = null;
     try {
       const startedAt = run.startedAt ?? new Date();
       const runningWithSession = await db
@@ -2945,7 +2946,6 @@ export function heartbeatService(db: Db) {
       // Periodic workspace auto-sync during long runs (every 5 min)
       // Minimizes data loss if k3s pod is redeployed mid-run
       const PERIODIC_SYNC_INTERVAL_MS = 5 * 60 * 1000;
-      let periodicSyncTimer: ReturnType<typeof setInterval> | null = null;
       if (executionWorkspace.cwd && executionWorkspace.repoUrl) {
         periodicSyncTimer = setInterval(() => {
           if (!executionWorkspace.cwd || !executionWorkspace.repoUrl) return;
