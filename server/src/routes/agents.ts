@@ -973,9 +973,13 @@ export function agentRoutes(db: Db) {
   });
 
   router.get("/instance/scheduler-heartbeats", async (req, res) => {
-    assertInstanceAdmin(req);
+    assertBoard(req);
 
-    const rows = await db
+    // Instance admins see all companies; regular users see only their companies
+    const isAdmin = req.actor.source === "local_implicit" || req.actor.isInstanceAdmin;
+    const allowedCompanies = isAdmin ? null : (req.actor.companyIds ?? []);
+
+    const query = db
       .select({
         id: agentsTable.id,
         companyId: agentsTable.companyId,
@@ -990,8 +994,13 @@ export function agentRoutes(db: Db) {
         companyIssuePrefix: companies.issuePrefix,
       })
       .from(agentsTable)
-      .innerJoin(companies, eq(agentsTable.companyId, companies.id))
-      .orderBy(companies.name, agentsTable.name);
+      .innerJoin(companies, eq(agentsTable.companyId, companies.id));
+
+    if (allowedCompanies) {
+      query.where(inArray(agentsTable.companyId, allowedCompanies));
+    }
+
+    const rows = await query.orderBy(companies.name, agentsTable.name);
 
     const items: InstanceSchedulerHeartbeatAgent[] = rows
       .map((row) => {
