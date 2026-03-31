@@ -11,7 +11,7 @@ import crypto from "node:crypto";
 import { resolvePaperclipInstanceId } from "../home-paths.js";
 import { eq, and } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { githubInstallations } from "@paperclipai/db";
+import { githubInstallations, companies } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 
 const GITHUB_API = "https://api.github.com";
@@ -323,10 +323,14 @@ export function githubAppService(db: Db): GitHubAppService {
     return config?.defaultOrg ?? process.env.GITHUB_APP_DEFAULT_ORG ?? "AIOTNetwork";
   }
 
-  function deriveRepoName(companyId: string, projectName: string): string {
+  function deriveRepoName(companyId: string, projectName: string, companyName?: string): string {
     const instanceId = resolvePaperclipInstanceId();
+    const safeProject = projectName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+    if (companyName) {
+      const safeCompany = companyName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+      return `${instanceId}-${safeCompany}-${safeProject}`.slice(0, 100);
+    }
     const companyShort = companyId.slice(0, 8);
-    const safeProject = projectName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-");
     return `${instanceId}-${companyShort}-${safeProject}`.slice(0, 100);
   }
 
@@ -360,10 +364,17 @@ export function githubAppService(db: Db): GitHubAppService {
     const authToken = await resolveAuthToken(companyId);
     if (!authToken) throw new Error("No GitHub credentials available (need App installation or GITHUB_PAT)");
 
+    // Look up company name for a descriptive repo name
+    const companyRow = await db
+      .select({ name: companies.name })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .then((rows) => rows[0] ?? null);
+    const companyName = companyRow?.name ?? null;
+
     const org = getDefaultOrg();
-    const safeName = deriveRepoName(companyId, repoName);
+    const safeName = deriveRepoName(companyId, repoName, companyName ?? undefined);
     const instanceId = resolvePaperclipInstanceId();
-    const companyShort = companyId.slice(0, 8);
 
     const res = await fetch(`${GITHUB_API}/orgs/${org}/repos`, {
       method: "POST",
@@ -375,8 +386,8 @@ export function githubAppService(db: Db): GitHubAppService {
       body: JSON.stringify({
         name: safeName,
         private: true,
-        auto_init: true,
-        description: `Managed by AgentsInc (${instanceId}) for company ${companyShort}, project: ${repoName}`,
+        auto_init: false,
+        description: `Managed by AgentsInc (${instanceId}) for ${companyName ?? companyId}, project: ${repoName}`,
       }),
     });
 
@@ -385,12 +396,116 @@ export function githubAppService(db: Db): GitHubAppService {
       throw new Error(`GitHub repo creation failed (${res.status}): ${body}`);
     }
 
-    const data = await res.json() as { full_name: string; clone_url: string; private: boolean };
-    return {
+    const data = await res.json() as { full_name: string; clone_url: string; private: boolean; default_branch: string };
+    const result = {
       fullName: data.full_name,
       cloneUrl: data.clone_url,
       private: data.private,
     };
+
+    // Push a detailed README with debug info for admins
+    try {
+      const readmeContent = generateProjectReadme({
+        companyName: companyName ?? companyId,
+        companyId,
+        projectName: repoName,
+        instanceId,
+        repoFullName: data.full_name,
+        createdAt: new Date().toISOString(),
+      });
+      const encodedContent = Buffer.from(readmeContent).toString("base64");
+      await fetch(`${GITHUB_API}/repos/${data.full_name}/contents/README.md`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          Accept: "application/vnd.github+json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: "Initial commit: add project README",
+          content: encodedContent,
+        }),
+      });
+    } catch (readmeErr) {
+      logger.warn({ err: readmeErr, repo: data.full_name }, "Failed to push README (non-fatal)");
+    }
+
+    return result;
+  }
+
+  /** Generate a detailed README for new project repos. */
+  function generateProjectReadme(info: {
+    companyName: string;
+    companyId: string;
+    projectName: string;
+    instanceId: string;
+    repoFullName: string;
+    createdAt: string;
+  }): string {
+    return [
+      `# ${info.companyName} / ${info.projectName}`,
+      ``,
+      `> Managed by [AgentsInc](https://agentcompanies.io) — do not edit manually unless debugging.`,
+      ``,
+      `## Project Info`,
+      ``,
+      `| Field | Value |`,
+      `|-------|-------|`,
+      `| **Company** | ${info.companyName} |`,
+      `| **Company ID** | \`${info.companyId}\` |`,
+      `| **Project** | ${info.projectName} |`,
+      `| **Instance** | \`${info.instanceId}\` |`,
+      `| **Repo** | \`${info.repoFullName}\` |`,
+      `| **Created** | ${info.createdAt} |`,
+      ``,
+      `## For Admins / Debugging`,
+      ``,
+      `### Architecture`,
+      ``,
+      `This repo is the source-of-truth for agent-modified code. Agents work in`,
+      `isolated git worktrees and merge to \`main\` locally before pushing.`,
+      ``,
+      `### Common Debug Scenarios`,
+      ``,
+      `**Agent's changes aren't showing up:**`,
+      `- Check if the agent's heartbeat is running: \`/instance/settings/heartbeats\``,
+      `- Check workspace git status: \`GET /api/projects/{projectId}/workspace/git-status\``,
+      `- Trigger manual push: \`POST /api/projects/{projectId}/workspace/git-push\``,
+      ``,
+      `**Merge conflict blocking pushes:**`,
+      `- A high-priority issue is auto-created and assigned to the conflicting agent`,
+      `- Check open issues in the project dashboard`,
+      `- The agent will resolve the conflict in its worktree and retry`,
+      ``,
+      `**Workspace lost after pod redeploy (k3s):**`,
+      `- The system auto-detects missing workspace directories`,
+      `- It will re-clone from this repo on the next heartbeat`,
+      `- Periodic auto-push (every 5 min) minimizes data loss`,
+      ``,
+      `**Preview shows stale code:**`,
+      `- Use the "Sync to Git" button in the Office preview panel`,
+      `- Or call \`POST /api/projects/{projectId}/workspace/git-push\` before snapshot`,
+      ``,
+      `### Useful API Endpoints`,
+      ``,
+      `| Endpoint | Description |`,
+      `|----------|-------------|`,
+      `| \`GET /api/projects/{id}/workspace/git-status\` | Check uncommitted/unpushed changes |`,
+      `| \`POST /api/projects/{id}/workspace/git-push\` | Commit + merge + push all workspaces |`,
+      `| \`POST /api/projects/{id}/workspace/snapshot\` | Create preview snapshot (auto-pushes first) |`,
+      `| \`POST /api/projects/{id}/workspace/ensure\` | Re-clone workspace if missing |`,
+      ``,
+      `### Commit History`,
+      ``,
+      `Agent commits follow this format:`,
+      `- \`{agent-name}: {issue-title}\` — normal task completion`,
+      `- \`workspace sync: {project-name}\` — manual push from Office UI`,
+      `- \`{agent-name}: work in progress (auto-sync)\` — periodic auto-push`,
+      ``,
+      `---`,
+      `*Auto-generated by AgentsInc on ${info.createdAt.split("T")[0]}*`,
+      ``,
+    ].join("\n");
   }
 
   async function deleteRepo(companyId: string, repoFullName: string): Promise<void> {
