@@ -450,7 +450,7 @@ export function agentRoutes(db: Db) {
   function parseSchedulerHeartbeatPolicy(runtimeConfig: unknown) {
     const heartbeat = asRecord(asRecord(runtimeConfig)?.heartbeat) ?? {};
     return {
-      enabled: parseBooleanLike(heartbeat.enabled) ?? true,
+      enabled: parseBooleanLike(heartbeat.enabled) ?? false,
       intervalSec: Math.max(0, parseNumberLike(heartbeat.intervalSec) ?? 0),
     };
   }

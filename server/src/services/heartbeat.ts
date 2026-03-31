@@ -1964,7 +1964,7 @@ export function heartbeatService(db: Db) {
     const heartbeat = parseObject(runtimeConfig.heartbeat);
 
     return {
-      enabled: asBoolean(heartbeat.enabled, true),
+      enabled: asBoolean(heartbeat.enabled, false),
       intervalSec: Math.max(0, asNumber(heartbeat.intervalSec, 0)),
       wakeOnDemand: asBoolean(heartbeat.wakeOnDemand ?? heartbeat.wakeOnAssignment ?? heartbeat.wakeOnOnDemand ?? heartbeat.wakeOnAutomation, true),
       maxConcurrentRuns: normalizeMaxConcurrentRuns(heartbeat.maxConcurrentRuns),
