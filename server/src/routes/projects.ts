@@ -17,7 +17,7 @@ import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { startRuntimeServicesForWorkspaceControl, stopRuntimeServicesForProjectWorkspace } from "../services/workspace-runtime.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { createWorkspaceSnapshot, getWorkspaceS3Sync } from "../services/workspace-snapshot.js";
-import { gitClone, gitFetchAndReset, gitCommitLocal, gitMergeLocalAndPushBase } from "../services/workspace-git.js";
+import { gitClone, gitFetchAndReset, gitCommitLocal, gitMergeLocalAndPushBase, type GitMergeResult } from "../services/workspace-git.js";
 import { executionWorkspaceService } from "../services/index.js";
 import { logger } from "../middleware/logger.js";
 import fsSync from "node:fs";
@@ -747,6 +747,193 @@ export function projectRoutes(db: Db) {
     }
   });
 
+  // --- Workspace Git Push (commit local → merge to main → push main) ---
+
+  /**
+   * Commit and push workspace changes for a project.
+   * Processes all active execution workspaces (agent worktrees) independently:
+   *   1. Fetch latest origin (for accurate conflict detection)
+   *   2. Commit locally in the worktree
+   *   3. Merge into base branch (main) locally
+   *   4. Push base branch to remote
+   * No feature branches are pushed — only the base branch reaches origin.
+   * On merge conflict, creates a high-priority issue for the owning agent.
+   */
+  router.post("/projects/:id/workspace/git-push", async (req, res) => {
+    const project = await svc.getById(req.params.id);
+    if (!project) throw notFound("Project not found");
+    assertCompanyAccess(req, project.companyId);
+
+    const repoUrl = project.codebase.repoUrl;
+    if (!repoUrl) {
+      res.status(422).json({ error: "no_repo_url", message: "Project has no git repo URL" });
+      return;
+    }
+
+    const credUrl = await getCredentialUrl(project.companyId, repoUrl);
+    const baseBranch = project.codebase.repoRef ?? "main";
+    const commitMessage = (typeof req.body?.message === "string" && req.body.message.trim())
+      ? req.body.message.trim()
+      : `workspace sync: ${project.name}`;
+
+    const execWsSvc = executionWorkspaceService(db);
+    const activeWorkspaces = await execWsSvc.list(project.companyId, {
+      projectId: project.id,
+      status: "active,idle",
+    });
+
+    const projectWsDir = resolveWorkspaceDir(project) ?? await ensureWorkspaceCloned(project);
+
+    const { execFile: execFileCb } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFileCb);
+
+    interface WorkspacePushResult {
+      workspaceName: string;
+      branch: string;
+      ok: boolean;
+      warning?: string;
+      conflicted?: boolean;
+      conflictFiles?: string[];
+    }
+
+    const results: WorkspacePushResult[] = [];
+
+    // Process each active execution workspace (agent worktrees)
+    for (const ews of activeWorkspaces) {
+      if (!ews.cwd || !fsSync.existsSync(ews.cwd)) {
+        // Workspace directory was wiped (e.g., k3s pod redeploy)
+        if (ews.cwd) {
+          await execWsSvc.update(ews.id, {
+            status: "archived" as const,
+            cleanupReason: "Workspace directory missing — likely pod redeploy",
+          });
+        }
+        results.push({
+          workspaceName: ews.name ?? ews.branchName ?? "unknown",
+          branch: ews.branchName ?? baseBranch,
+          ok: false,
+          warning: "workspace directory missing — pod may have been redeployed",
+        });
+        continue;
+      }
+
+      const branch = ews.branchName ?? "main";
+
+      // Fetch latest origin for accurate conflict detection
+      await execFileAsync("git", ["-C", ews.cwd, "fetch", "origin"], { timeout: 60_000 }).catch(() => {});
+
+      // Step 1: Commit locally in worktree
+      const commitResult = await gitCommitLocal({
+        cwd: ews.cwd,
+        commitMessage: `${commitMessage} [${ews.name ?? branch}]`,
+      });
+
+      if (!commitResult.ok) {
+        results.push({ workspaceName: ews.name ?? branch, branch, ok: false, warning: commitResult.warning });
+        continue;
+      }
+
+      if (commitResult.warning === "nothing to commit") {
+        results.push({ workspaceName: ews.name ?? branch, branch, ok: true, warning: "nothing to commit" });
+        continue;
+      }
+
+      // Step 2: Merge into base locally and push base to remote
+      const mergeResult = await gitMergeLocalAndPushBase({
+        worktreeCwd: ews.cwd,
+        credUrl,
+        branch,
+        baseBranch,
+      });
+
+      results.push({
+        workspaceName: ews.name ?? branch,
+        branch,
+        ok: mergeResult.ok,
+        warning: mergeResult.warning,
+        conflicted: mergeResult.conflicted,
+        conflictFiles: mergeResult.conflictFiles,
+      });
+
+      // If merge conflicted, create a conflict-resolution issue for the agent
+      if (mergeResult.conflicted) {
+        await createConflictResolutionIssue(db, project, ews, branch, baseBranch, mergeResult.conflictFiles ?? []);
+      }
+    }
+
+    // Process the shared project workspace (if not already covered by worktrees)
+    if (projectWsDir && !activeWorkspaces.some((w) => w.cwd === projectWsDir)) {
+      const gitDir = path.join(projectWsDir, ".git");
+      if (fsSync.existsSync(gitDir)) {
+        const branch = await getDefaultBranch(projectWsDir).catch(() => baseBranch);
+
+        // Fetch latest
+        await execFileAsync("git", ["-C", projectWsDir, "fetch", "origin"], { timeout: 60_000 }).catch(() => {});
+
+        const commitResult = await gitCommitLocal({ cwd: projectWsDir, commitMessage });
+
+        if (commitResult.ok && commitResult.warning !== "nothing to commit") {
+          if (branch === baseBranch) {
+            // Already on main — just push directly
+            try {
+              await execFileAsync("git", ["-C", projectWsDir, "remote", "set-url", "origin", credUrl], { timeout: 60_000 });
+              await execFileAsync("git", ["-C", projectWsDir, "push", "origin", baseBranch], { timeout: 60_000 });
+              // Clear credentials
+              try {
+                const parsed = new URL(credUrl); parsed.username = ""; parsed.password = "";
+                await execFileAsync("git", ["-C", projectWsDir, "remote", "set-url", "origin", parsed.toString()], { timeout: 10_000 });
+              } catch { /* ignore */ }
+              results.push({ workspaceName: "project", branch: baseBranch, ok: true });
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              results.push({ workspaceName: "project", branch: baseBranch, ok: false, warning: msg });
+            }
+          } else {
+            const mergeResult = await gitMergeLocalAndPushBase({
+              worktreeCwd: projectWsDir,
+              credUrl,
+              branch,
+              baseBranch,
+            });
+            results.push({
+              workspaceName: "project",
+              branch,
+              ok: mergeResult.ok,
+              warning: mergeResult.warning,
+              conflicted: mergeResult.conflicted,
+              conflictFiles: mergeResult.conflictFiles,
+            });
+          }
+        } else {
+          results.push({ workspaceName: "project", branch, ok: true, warning: commitResult.warning ?? "nothing to commit" });
+        }
+      }
+    }
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: project.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "project.workspace_git_pushed",
+      entityType: "project",
+      entityId: project.id,
+      details: { baseBranch, workspaceCount: results.length, results },
+    });
+
+    const allOk = results.every((r) => r.ok);
+    const anyConflicted = results.some((r) => r.conflicted);
+
+    res.json({
+      ok: allOk,
+      baseBranch,
+      results,
+      ...(anyConflicted && { hasConflicts: true }),
+    });
+  });
+
   // --- Workspace Snapshot (for preview) ---
 
   router.post("/projects/:id/workspace/snapshot", async (req, res) => {
@@ -936,4 +1123,79 @@ export function projectRoutes(db: Db) {
   });
 
   return router;
+}
+
+// ── Conflict Resolution Issue ───────────────────────────────────────────
+
+/**
+ * Create a high-priority issue when a merge conflict is detected.
+ * Assigns to the agent that owns the conflicting workspace, then wakes it.
+ */
+async function createConflictResolutionIssue(
+  db: Db,
+  project: { id: string; companyId: string; name: string },
+  executionWorkspace: { id: string; sourceIssueId: string | null; name: string | null },
+  branch: string,
+  baseBranch: string,
+  conflictFiles: string[],
+): Promise<void> {
+  try {
+    const { issueService, heartbeatService } = await import("../services/index.js");
+    const { queueIssueAssignmentWakeup } = await import("../services/issue-assignment-wakeup.js");
+    const issueSvc = issueService(db);
+
+    // Find the agent assigned to the source issue
+    let assigneeAgentId: string | null = null;
+    if (executionWorkspace.sourceIssueId) {
+      const sourceIssue = await issueSvc.getById(executionWorkspace.sourceIssueId);
+      assigneeAgentId = sourceIssue?.assigneeAgentId ?? null;
+    }
+
+    // Deduplicate — skip if an open conflict issue already exists for same branch
+    const existing = await issueSvc.list(project.companyId, { projectId: project.id });
+    const hasOpenConflictIssue = existing.some(
+      (i) =>
+        i.title.includes("merge conflict") &&
+        i.title.includes(branch) &&
+        i.status !== "done" &&
+        i.status !== "cancelled",
+    );
+    if (hasOpenConflictIssue) return;
+
+    const description = [
+      `Merge conflict detected when merging \`${branch}\` into \`${baseBranch}\`.`,
+      ``,
+      `**Conflicting files:**`,
+      ...conflictFiles.map((f) => `- \`${f}\``),
+      ``,
+      `**Resolution steps:**`,
+      `1. In your worktree, fetch and merge the latest \`${baseBranch}\``,
+      `2. Resolve the conflicts in the listed files`,
+      `3. Commit and push the resolution`,
+      `4. The merge to \`${baseBranch}\` will be re-attempted on next push`,
+    ].join("\n");
+
+    const created = await issueSvc.create(project.companyId, {
+      title: `Resolve merge conflict on \`${branch}\` → \`${baseBranch}\``,
+      projectId: project.id,
+      priority: "high",
+      status: "todo",
+      description,
+      ...(assigneeAgentId ? { assigneeAgentId } : {}),
+    });
+
+    // Wake the agent to handle the conflict
+    if (assigneeAgentId) {
+      void queueIssueAssignmentWakeup({
+        heartbeat: heartbeatService(db),
+        issue: { id: created.id, assigneeAgentId, status: "todo" },
+        reason: "merge_conflict",
+        mutation: "create",
+        contextSource: "workspace.git_push",
+        requestedByActorType: "system",
+      });
+    }
+  } catch (err) {
+    logger.warn({ err, branch, baseBranch, projectId: project.id }, "failed to create conflict resolution issue");
+  }
 }

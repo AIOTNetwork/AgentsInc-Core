@@ -3,6 +3,12 @@
  *
  * Handles credential injection, fetch, commit, merge, and push
  * using GitHub App installation tokens.
+ *
+ * Key design:
+ * - Agents commit locally in their worktree, merge into base (main) locally, push only base.
+ * - No feature branches are pushed to remote — only the base branch reaches origin.
+ * - Per-directory mutex prevents concurrent git index corruption.
+ * - Merge conflicts return structured info so callers can create resolution issues.
  */
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
@@ -13,6 +19,8 @@ import type { GitHubAppService } from "./github-app.js";
 
 const execFile = promisify(execFileCallback);
 const GIT_TIMEOUT = 60_000;
+
+// ── Types ───────────────────────────────────────────────────────────────
 
 interface GitResult {
   ok: boolean;
@@ -56,25 +64,22 @@ export async function gitFetchAndReset(
   credUrl: string,
   branch: string,
 ): Promise<GitResult> {
-  try {
-    // Temporarily set credentialed remote URL
-    await execFile("git", ["-C", cwd, "remote", "set-url", "origin", credUrl], { timeout: GIT_TIMEOUT });
+  return withDirectoryLock(cwd, async () => {
+    try {
+      await execFile("git", ["-C", cwd, "remote", "set-url", "origin", credUrl], { timeout: GIT_TIMEOUT });
+      await execFile("git", ["-C", cwd, "fetch", "origin", "--prune"], { timeout: GIT_TIMEOUT });
 
-    // Fetch all branches
-    await execFile("git", ["-C", cwd, "fetch", "origin", "--prune"], { timeout: GIT_TIMEOUT });
+      const targetRef = `origin/${branch}`;
+      await execFile("git", ["-C", cwd, "reset", "--hard", targetRef], { timeout: GIT_TIMEOUT });
 
-    // Reset to the target branch
-    const targetRef = `origin/${branch}`;
-    await execFile("git", ["-C", cwd, "reset", "--hard", targetRef], { timeout: GIT_TIMEOUT });
-
-    return { ok: true };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, warning: `git fetch+reset failed: ${msg}` };
-  } finally {
-    // Always clear credentials from remote URL
-    await clearRemoteCredentials(cwd).catch(() => {});
-  }
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, warning: `git fetch+reset failed: ${msg}` };
+    } finally {
+      await clearRemoteCredentials(cwd).catch(() => {});
+    }
+  });
 }
 
 /**
@@ -87,7 +92,6 @@ export async function gitClone(
 ): Promise<GitResult> {
   try {
     await execFile("git", ["clone", "--depth", "1", credUrl, cwd], { timeout: GIT_TIMEOUT });
-    // Reset remote to non-credentialed URL
     await execFile("git", ["-C", cwd, "remote", "set-url", "origin", cleanUrl], { timeout: GIT_TIMEOUT });
     return { ok: true };
   } catch (err) {
@@ -216,6 +220,8 @@ export async function gitCommitMergeAndPush(opts: {
 
   return { ok: true, conflicted: false };
 }
+
+// ── Helpers ─────────────────────────────────────────────────────────────
 
 /**
  * Resolve the main repo root from a worktree path.

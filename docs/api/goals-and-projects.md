@@ -121,3 +121,75 @@ GET /api/projects/{projectId}/workspaces
 PATCH /api/projects/{projectId}/workspaces/{workspaceId}
 DELETE /api/projects/{projectId}/workspaces/{workspaceId}
 ```
+
+## Workspace Git Operations
+
+These endpoints operate on the workspace's local git checkout. See [workspace-git-sync spec](../specs/workspace-git-sync.md) for full architecture.
+
+### Git Status
+
+Check the workspace for uncommitted changes and unpushed commits.
+
+```
+GET /api/projects/{projectId}/workspace/git-status
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "isGit": true,
+  "ready": false,
+  "hasUncommitted": true,
+  "uncommittedCount": 3,
+  "unpushedCount": 1,
+  "hasRemote": true,
+  "hasDockerfile": true
+}
+```
+
+`ready` is `true` when there are no uncommitted changes and no unpushed commits.
+
+### Git Push
+
+Commit and push all workspace changes to the remote. For multi-agent projects, processes each agent's worktree independently: commits locally, merges into the base branch, and pushes the base branch to remote. No feature branches are pushed.
+
+```
+POST /api/projects/{projectId}/workspace/git-push
+{
+  "message": "optional commit message"
+}
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "baseBranch": "main",
+  "results": [
+    { "workspaceName": "PROJ-42-fix-auth", "branch": "PROJ-42-fix-auth", "ok": true },
+    { "workspaceName": "PROJ-43-add-tests", "branch": "PROJ-43-add-tests", "ok": false, "conflicted": true, "conflictFiles": ["src/auth.ts"] }
+  ],
+  "hasConflicts": true
+}
+```
+
+When a merge conflict is detected, a high-priority issue is automatically created and assigned to the owning agent for resolution.
+
+### Ensure Workspace
+
+Clone the workspace from git if the local directory is missing (e.g., after a k3s pod redeploy).
+
+```
+POST /api/projects/{projectId}/workspace/ensure
+```
+
+### Workspace Snapshot
+
+Create a tar.gz snapshot of the workspace for preview deployments. Automatically commits and pushes to git before creating the snapshot.
+
+```
+POST /api/projects/{projectId}/workspace/snapshot
+```
