@@ -134,7 +134,12 @@ export async function gitCommitLocal(opts: {
       return { ok: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      logger.warn({ cwd, err: msg, durationMs: Date.now() - start, op: "commit" }, "[git] commit failed");
+      // Non-git directories are expected for non-git workspaces — don't spam logs
+      if (msg.includes("not a git repository")) {
+        logger.debug({ cwd, op: "commit" }, "[git] skipping non-git directory");
+      } else {
+        logger.warn({ cwd, err: msg, durationMs: Date.now() - start, op: "commit" }, "[git] commit failed");
+      }
       return { ok: false, warning: `git commit failed: ${msg}` };
     }
   });
