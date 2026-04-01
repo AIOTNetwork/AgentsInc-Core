@@ -821,12 +821,35 @@ export function projectRoutes(db: Db) {
       return;
     }
 
-    const pushResult = await gitMergeLocalAndPushBase({
-      worktreeCwd: managedDir,
-      credUrl,
-      branch: baseBranch,
-      baseBranch,
-    });
+    // For fresh repos (no remote branch yet), push directly instead of merge
+    const { execFile: execFileCb } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFileCb);
+
+    let pushResult: GitMergeResult;
+    try {
+      // Check if remote branch exists
+      await execFileAsync("git", ["-C", managedDir, "rev-parse", `origin/${baseBranch}`], { timeout: 10_000 });
+      // Remote branch exists — use normal merge+push
+      pushResult = await gitMergeLocalAndPushBase({
+        worktreeCwd: managedDir,
+        credUrl,
+        branch: baseBranch,
+        baseBranch,
+      });
+    } catch {
+      // Remote branch doesn't exist (empty repo) — push directly
+      try {
+        await execFileAsync("git", ["-C", managedDir, "remote", "set-url", "origin", credUrl], { timeout: 10_000 });
+        await execFileAsync("git", ["-C", managedDir, "push", "-u", "origin", baseBranch], { timeout: 60_000 });
+        logger.info({ managedDir, baseBranch }, "[workspace] initial push to empty repo");
+        pushResult = { ok: true, conflicted: false };
+      } catch (pushErr) {
+        const pushMsg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+        logger.warn({ err: pushMsg, managedDir }, "[workspace] initial push failed");
+        pushResult = { ok: false, conflicted: false, warning: pushMsg };
+      }
+    }
 
     res.json({
       ok: pushResult.ok,

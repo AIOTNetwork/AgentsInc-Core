@@ -965,7 +965,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
           )}
           {ensureRepo.isError && (
             <p className="text-xs text-destructive">
-              Failed to create repo: {ensureRepo.error instanceof Error ? ensureRepo.error.message : "Unknown error"}
+              Failed to create repo: {(ensureRepo.error as any)?.body?.message ?? (ensureRepo.error instanceof Error ? ensureRepo.error.message : "Unknown error")}
             </p>
           )}
           {copyToRepo.isPending && (
@@ -976,7 +976,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
           )}
           {copyToRepo.isError && (
             <p className="text-xs text-destructive">
-              Failed to copy files: {copyToRepo.error instanceof Error ? copyToRepo.error.message : "Unknown error"}
+              Failed to copy files: {(copyToRepo.error as any)?.body?.message ?? (copyToRepo.error instanceof Error ? copyToRepo.error.message : "Unknown error")}
             </p>
           )}
         </div>
