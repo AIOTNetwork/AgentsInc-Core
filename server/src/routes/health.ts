@@ -4,6 +4,7 @@ import { and, count, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { heartbeatRuns, instanceUserRoles, invites } from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import { readPersistedDevServerStatus, toDevServerHealthStatus } from "../dev-server-status.js";
+import { getInstanceAdminEmails } from "../instance-admin-emails.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { serverVersion } from "../version.js";
 
@@ -48,7 +49,8 @@ export function healthRoutes(
         .from(instanceUserRoles)
         .where(sql`${instanceUserRoles.role} = 'instance_admin'`)
         .then((rows) => Number(rows[0]?.count ?? 0));
-      bootstrapStatus = roleCount > 0 ? "ready" : "bootstrap_pending";
+      const hasAdminEmails = getInstanceAdminEmails().size > 0;
+      bootstrapStatus = roleCount > 0 || hasAdminEmails ? "ready" : "bootstrap_pending";
 
       if (bootstrapStatus === "bootstrap_pending") {
         const now = new Date();
