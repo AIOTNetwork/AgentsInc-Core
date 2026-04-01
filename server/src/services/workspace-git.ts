@@ -125,7 +125,7 @@ export async function gitCommitLocal(opts: {
       await execFile("git", ["-C", cwd, "add", "-A"], { timeout: GIT_TIMEOUT });
       const { stdout: status } = await execFile("git", ["-C", cwd, "status", "--porcelain"], { timeout: 10_000 });
       if (!status.trim()) {
-        logger.info({ cwd, op: "commit" }, "[git] nothing to commit");
+        logger.debug({ cwd, op: "commit" }, "[git] nothing to commit");
         return { ok: true, warning: "nothing to commit" };
       }
       logger.info({ cwd, message: commitMessage, op: "commit" }, "[git] committing changes");
