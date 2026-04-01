@@ -65,16 +65,22 @@ export async function gitFetchAndReset(
   branch: string,
 ): Promise<GitResult> {
   return withDirectoryLock(cwd, async () => {
+    const start = Date.now();
     try {
       await execFile("git", ["-C", cwd, "remote", "set-url", "origin", credUrl], { timeout: GIT_TIMEOUT });
+
+      logger.info({ cwd, branch, op: "fetch" }, "[git] fetching origin");
       await execFile("git", ["-C", cwd, "fetch", "origin", "--prune"], { timeout: GIT_TIMEOUT });
 
       const targetRef = `origin/${branch}`;
+      logger.info({ cwd, branch, targetRef, op: "reset" }, "[git] resetting to target ref");
       await execFile("git", ["-C", cwd, "reset", "--hard", targetRef], { timeout: GIT_TIMEOUT });
 
+      logger.info({ cwd, branch, durationMs: Date.now() - start, op: "fetch+reset" }, "[git] fetch+reset complete");
       return { ok: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      logger.warn({ cwd, branch, err: msg, durationMs: Date.now() - start, op: "fetch+reset" }, "[git] fetch+reset failed");
       return { ok: false, warning: `git fetch+reset failed: ${msg}` };
     } finally {
       await clearRemoteCredentials(cwd).catch(() => {});
@@ -90,12 +96,16 @@ export async function gitClone(
   cwd: string,
   cleanUrl: string,
 ): Promise<GitResult> {
+  const start = Date.now();
   try {
+    logger.info({ cwd, op: "clone" }, "[git] cloning repo (shallow)");
     await execFile("git", ["clone", "--depth", "1", credUrl, cwd], { timeout: GIT_TIMEOUT });
     await execFile("git", ["-C", cwd, "remote", "set-url", "origin", cleanUrl], { timeout: GIT_TIMEOUT });
+    logger.info({ cwd, durationMs: Date.now() - start, op: "clone" }, "[git] clone complete");
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    logger.warn({ cwd, err: msg, durationMs: Date.now() - start, op: "clone" }, "[git] clone failed");
     return { ok: false, warning: `git clone failed: ${msg}` };
   }
 }
@@ -110,16 +120,21 @@ export async function gitCommitLocal(opts: {
 }): Promise<GitResult> {
   return withDirectoryLock(opts.cwd, async () => {
     const { cwd, commitMessage } = opts;
+    const start = Date.now();
     try {
       await execFile("git", ["-C", cwd, "add", "-A"], { timeout: GIT_TIMEOUT });
       const { stdout: status } = await execFile("git", ["-C", cwd, "status", "--porcelain"], { timeout: 10_000 });
       if (!status.trim()) {
+        logger.info({ cwd, op: "commit" }, "[git] nothing to commit");
         return { ok: true, warning: "nothing to commit" };
       }
+      logger.info({ cwd, message: commitMessage, op: "commit" }, "[git] committing changes");
       await execFile("git", ["-C", cwd, "commit", "-m", commitMessage], { timeout: GIT_TIMEOUT });
+      logger.info({ cwd, durationMs: Date.now() - start, op: "commit" }, "[git] commit complete");
       return { ok: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      logger.warn({ cwd, err: msg, durationMs: Date.now() - start, op: "commit" }, "[git] commit failed");
       return { ok: false, warning: `git commit failed: ${msg}` };
     }
   });
@@ -143,13 +158,21 @@ export async function gitMergeLocalAndPushBase(opts: {
   }
 
   return withDirectoryLock(mainCwd, async () => {
+    const start = Date.now();
     try {
       await execFile("git", ["-C", mainCwd, "remote", "set-url", "origin", credUrl], { timeout: GIT_TIMEOUT });
+
+      logger.info({ cwd: mainCwd, branch, baseBranch, op: "fetch" }, "[git] fetching before merge");
       await execFile("git", ["-C", mainCwd, "fetch", "origin"], { timeout: GIT_TIMEOUT });
+
+      logger.info({ cwd: mainCwd, baseBranch, op: "checkout" }, "[git] checking out base branch");
       await execFile("git", ["-C", mainCwd, "checkout", baseBranch], { timeout: GIT_TIMEOUT });
+
+      logger.info({ cwd: mainCwd, baseBranch, op: "pull" }, "[git] pulling base branch (ff-only)");
       await execFile("git", ["-C", mainCwd, "pull", "origin", baseBranch, "--ff-only"], { timeout: GIT_TIMEOUT }).catch(() => {});
 
       try {
+        logger.info({ cwd: mainCwd, branch, baseBranch, op: "merge" }, "[git] merging branch into base");
         await execFile("git", ["-C", mainCwd, "merge", branch, "-m", `merge ${branch} into ${baseBranch}`], { timeout: GIT_TIMEOUT });
       } catch (mergeErr) {
         const { stdout: conflictList } = await execFile(
@@ -160,16 +183,18 @@ export async function gitMergeLocalAndPushBase(opts: {
         await execFile("git", ["-C", mainCwd, "merge", "--abort"], { timeout: 10_000 }).catch(() => {});
         await clearRemoteCredentials(mainCwd).catch(() => {});
         const msg = mergeErr instanceof Error ? mergeErr.message : String(mergeErr);
-        logger.warn({ err: mergeErr, branch, baseBranch, conflictFiles }, "merge to base conflicted");
+        logger.warn({ cwd: mainCwd, branch, baseBranch, conflictFiles, durationMs: Date.now() - start, op: "merge" }, "[git] merge conflicted");
         return { ok: false, conflicted: true, conflictFiles, warning: msg };
       }
 
+      logger.info({ cwd: mainCwd, baseBranch, op: "push" }, "[git] pushing base branch to origin");
       await execFile("git", ["-C", mainCwd, "push", "origin", baseBranch], { timeout: GIT_TIMEOUT });
       await clearRemoteCredentials(mainCwd).catch(() => {});
+      logger.info({ cwd: mainCwd, branch, baseBranch, durationMs: Date.now() - start, op: "merge+push" }, "[git] merge+push complete");
       return { ok: true, conflicted: false };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      logger.warn({ err, branch, baseBranch }, "merge+push base failed");
+      logger.warn({ cwd: mainCwd, branch, baseBranch, err: msg, durationMs: Date.now() - start, op: "merge+push" }, "[git] merge+push failed");
       await execFile("git", ["-C", mainCwd, "merge", "--abort"], { timeout: 10_000 }).catch(() => {});
       await clearRemoteCredentials(mainCwd).catch(() => {});
       return { ok: false, conflicted: false, warning: msg };
