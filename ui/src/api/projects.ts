@@ -40,4 +40,13 @@ export const projectsApi = {
   removeWorkspace: (projectId: string, workspaceId: string, companyId?: string) =>
     api.delete<ProjectWorkspace>(projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}`)),
   remove: (id: string, companyId?: string) => api.delete<Project>(projectPath(id, companyId)),
+  listWorkspaceFiles: (projectId: string, companyId?: string) =>
+    api.get<{ root: string; files: Array<{ name: string; type: string }> }>(
+      projectPath(projectId, companyId, "/workspace/files"),
+    ),
+  gitPush: (projectId: string, message?: string, companyId?: string) =>
+    api.post<Record<string, unknown>>(
+      projectPath(projectId, companyId, "/workspace/git-push"),
+      message ? { message } : {},
+    ),
 };

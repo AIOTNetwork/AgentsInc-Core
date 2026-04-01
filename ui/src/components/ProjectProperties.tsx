@@ -253,10 +253,33 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     mutationFn: () => githubApi.ensureRepo(selectedCompanyId!, project.name, project.id, defaultRepoUrl),
   });
 
-  const useDefaultRepo = () => {
+  const syncToRepo = useMutation({
+    mutationFn: () => projectsApi.gitPush(project.id, `Initial sync: ${project.name}`, selectedCompanyId ?? undefined),
+  });
+
+  const useDefaultRepo = async () => {
     if (!defaultRepoUrl) return;
     persistCodebase({ repoUrl: defaultRepoUrl });
     ensureRepo.mutate();
+
+    // Check if existing local folder has source code to push
+    const localFolder = codebase.effectiveLocalFolder ?? codebase.localFolder;
+    if (localFolder) {
+      try {
+        const { files } = await projectsApi.listWorkspaceFiles(project.id, selectedCompanyId ?? undefined);
+        const hasSourceFiles = files.some((f) => f.name !== ".git" && f.name !== "README.md");
+        if (hasSourceFiles) {
+          const confirmed = window.confirm(
+            `The local folder contains source files. Push them to the new repo?\n\n${localFolder}`,
+          );
+          if (confirmed) {
+            syncToRepo.mutate();
+          }
+        }
+      } catch {
+        // No local folder or not accessible — skip
+      }
+    }
   };
 
   const { data: allGoals } = useQuery({
@@ -933,6 +956,17 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
           {ensureRepo.isError && (
             <p className="text-xs text-destructive">
               Failed to create repo: {ensureRepo.error instanceof Error ? ensureRepo.error.message : "Unknown error"}
+            </p>
+          )}
+          {syncToRepo.isPending && (
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Pushing local files to repo...
+            </p>
+          )}
+          {syncToRepo.isError && (
+            <p className="text-xs text-destructive">
+              Failed to push files: {syncToRepo.error instanceof Error ? syncToRepo.error.message : "Unknown error"}
             </p>
           )}
         </div>
