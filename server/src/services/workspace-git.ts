@@ -188,7 +188,29 @@ export async function gitMergeLocalAndPushBase(opts: {
       }
 
       logger.info({ cwd: mainCwd, baseBranch, op: "push" }, "[git] pushing base branch to origin");
-      await execFile("git", ["-C", mainCwd, "push", "origin", baseBranch], { timeout: GIT_TIMEOUT });
+      try {
+        await execFile("git", ["-C", mainCwd, "push", "origin", baseBranch], { timeout: GIT_TIMEOUT });
+      } catch (pushErr) {
+        const pushMsg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+        if (pushMsg.includes("non-fast-forward") || pushMsg.includes("rejected")) {
+          // Remote has diverged — pull with rebase and retry once
+          logger.info({ cwd: mainCwd, baseBranch, op: "pull-rebase" }, "[git] push rejected (non-fast-forward), pulling with rebase");
+          try {
+            await execFile("git", ["-C", mainCwd, "pull", "origin", baseBranch, "--rebase"], { timeout: GIT_TIMEOUT });
+            logger.info({ cwd: mainCwd, baseBranch, op: "push-retry" }, "[git] retrying push after rebase");
+            await execFile("git", ["-C", mainCwd, "push", "origin", baseBranch], { timeout: GIT_TIMEOUT });
+          } catch (rebaseErr) {
+            // Rebase or retry push failed — likely a real conflict
+            const rebaseMsg = rebaseErr instanceof Error ? rebaseErr.message : String(rebaseErr);
+            await execFile("git", ["-C", mainCwd, "rebase", "--abort"], { timeout: 10_000 }).catch(() => {});
+            await clearRemoteCredentials(mainCwd).catch(() => {});
+            logger.warn({ cwd: mainCwd, branch, baseBranch, err: rebaseMsg, durationMs: Date.now() - start, op: "push-rebase" }, "[git] push failed after rebase — conflict needs resolution");
+            return { ok: false, conflicted: true, conflictFiles: [], warning: `push rejected and rebase failed: ${rebaseMsg}` };
+          }
+        } else {
+          throw pushErr;
+        }
+      }
       await clearRemoteCredentials(mainCwd).catch(() => {});
       logger.info({ cwd: mainCwd, branch, baseBranch, durationMs: Date.now() - start, op: "merge+push" }, "[git] merge+push complete");
       return { ok: true, conflicted: false };

@@ -2958,6 +2958,23 @@ export function heartbeatService(db: Db) {
               branch: executionWorkspace.branchName ?? "main",
               baseBranch: executionWorkspace.repoRef ?? "main",
               commitMessage: `${agent.name}: work in progress (auto-sync)`,
+            }).then(async (result) => {
+              if (result.conflicted && resolvedProjectId) {
+                try {
+                  await issuesSvc.create(agent.companyId, {
+                    title: `Resolve git conflict on ${executionWorkspace.repoRef ?? "main"} (auto-sync)`,
+                    description: `Push to \`${executionWorkspace.repoRef ?? "main"}\` was rejected during periodic auto-sync. Remote has diverged and automatic rebase failed.\n\n**Workspace:** \`${executionWorkspace.cwd}\`\n**Warning:** ${result.warning ?? "none"}`,
+                    projectId: resolvedProjectId,
+                    assigneeAgentId: agent.id,
+                    status: "todo",
+                    priority: "high",
+                    originKind: "system",
+                  });
+                  logger.info({ agentId: agent.id, op: "auto-sync" }, "[git] created conflict resolution issue");
+                } catch (issueErr) {
+                  logger.warn({ err: issueErr }, "[git] failed to create conflict resolution issue");
+                }
+              }
             }).catch((err) => logger.warn({ err }, "periodic workspace sync failed"));
           }).catch((err) => logger.warn({ err }, "periodic sync credential fetch failed"));
         }, PERIODIC_SYNC_INTERVAL_MS);
@@ -3206,8 +3223,45 @@ export function heartbeatService(db: Db) {
           branch,
           baseBranch,
           commitMessage: `${agent.name}: ${issueRef?.title ?? 'completed task'}${commitSuffix}`,
-        }).then((result) => {
-          if (result.warning) {
+        }).then(async (result) => {
+          if (result.conflicted && resolvedProjectId) {
+            // Create an issue for AI to resolve the git conflict
+            const conflictFilesList = result.conflictFiles?.length
+              ? result.conflictFiles.map((f) => `- \`${f}\``).join("\n")
+              : "_(unable to determine specific files)_";
+            try {
+              await issuesSvc.create(agent.companyId, {
+                title: `Resolve git conflict on ${baseBranch}`,
+                description: [
+                  `## Git Push Conflict`,
+                  ``,
+                  `Push to \`${baseBranch}\` was rejected because the remote has diverged.`,
+                  `Automatic rebase failed and needs manual resolution.`,
+                  ``,
+                  `**Branch:** \`${branch}\``,
+                  `**Base branch:** \`${baseBranch}\``,
+                  `**Workspace:** \`${executionWorkspace.cwd}\``,
+                  `**Warning:** ${result.warning ?? "none"}`,
+                  ``,
+                  `### Conflicted files`,
+                  conflictFilesList,
+                  ``,
+                  `### Steps to resolve`,
+                  `1. Pull latest from \`origin/${baseBranch}\``,
+                  `2. Resolve the conflicts in the listed files`,
+                  `3. Commit and push to \`${baseBranch}\``,
+                ].join("\n"),
+                projectId: resolvedProjectId,
+                assigneeAgentId: agent.id,
+                status: "todo",
+                priority: "high",
+                originKind: "system",
+              });
+              logger.info({ agentId: agent.id, projectId: resolvedProjectId, branch, baseBranch }, "[git] created conflict resolution issue");
+            } catch (issueErr) {
+              logger.warn({ err: issueErr }, "[git] failed to create conflict resolution issue");
+            }
+          } else if (result.warning) {
             logger.info({ warning: result.warning, branch, baseBranch, outcome }, "git push completed with warning");
           } else if (result.ok) {
             logger.info({ branch, baseBranch, outcome }, "git commit+merge+push succeeded");
