@@ -747,6 +747,87 @@ export function projectRoutes(db: Db) {
     }
   });
 
+  // --- Copy local files to repo ---
+
+  /**
+   * Copy files from a source directory to the managed repo folder, then commit + push.
+   * Used when switching to a default repo — migrates existing source into the new repo.
+   */
+  router.post("/projects/:id/workspace/copy-to-repo", async (req, res) => {
+    const project = await svc.getById(req.params.id);
+    if (!project) throw notFound("Project not found");
+    assertCompanyAccess(req, project.companyId);
+
+    const sourceDir = typeof req.body?.sourceDir === "string" ? req.body.sourceDir : null;
+    if (!sourceDir) {
+      res.status(422).json({ error: "sourceDir is required" });
+      return;
+    }
+
+    // Verify source exists
+    if (!fsSync.existsSync(sourceDir) || !fsSync.statSync(sourceDir).isDirectory()) {
+      res.status(404).json({ error: "source_not_found", message: `Source directory not found: ${sourceDir}` });
+      return;
+    }
+
+    const repoUrl = project.codebase.repoUrl;
+    if (!repoUrl) {
+      res.status(422).json({ error: "no_repo_url", message: "Project has no git repo URL" });
+      return;
+    }
+
+    // Ensure the managed folder exists with a git clone
+    const managedDir = await ensureWorkspaceCloned(project);
+    if (!managedDir) {
+      res.status(500).json({ error: "workspace_setup_failed", message: "Could not set up managed workspace" });
+      return;
+    }
+
+    // Copy files from source to managed folder (excluding .git, node_modules)
+    const { execFile: execFileCb } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFileCb);
+
+    try {
+      await execFileAsync("rsync", [
+        "-a", "--delete",
+        "--exclude", ".git",
+        "--exclude", "node_modules",
+        `${sourceDir}/`,
+        `${managedDir}/`,
+      ], { timeout: 60_000 });
+      logger.info({ sourceDir, managedDir, projectId: project.id }, "[workspace] copied files to managed repo");
+    } catch (copyErr) {
+      const msg = copyErr instanceof Error ? copyErr.message : String(copyErr);
+      res.status(500).json({ error: "copy_failed", message: msg });
+      return;
+    }
+
+    // Commit and push
+    const credUrl = await getCredentialUrl(project.companyId, repoUrl);
+    const baseBranch = project.codebase.repoRef ?? "main";
+    const commitResult = await gitCommitLocal({ cwd: managedDir, commitMessage: `Initial sync: ${project.name}` });
+    if (!commitResult.ok) {
+      res.json({ ok: true, copied: true, pushed: false, warning: commitResult.warning });
+      return;
+    }
+
+    const pushResult = await gitMergeLocalAndPushBase({
+      worktreeCwd: managedDir,
+      credUrl,
+      branch: baseBranch,
+      baseBranch,
+    });
+
+    res.json({
+      ok: pushResult.ok,
+      copied: true,
+      pushed: pushResult.ok,
+      warning: pushResult.warning,
+      conflicted: pushResult.conflicted,
+    });
+  });
+
   // --- Workspace Git Push (commit local → merge to main → push main) ---
 
   /**

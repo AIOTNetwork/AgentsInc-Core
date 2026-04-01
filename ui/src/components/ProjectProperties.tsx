@@ -253,32 +253,42 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     mutationFn: () => githubApi.ensureRepo(selectedCompanyId!, project.name, project.id, defaultRepoUrl),
   });
 
-  const syncToRepo = useMutation({
-    mutationFn: () => projectsApi.gitPush(project.id, `Initial sync: ${project.name}`, selectedCompanyId ?? undefined),
+  const copyToRepo = useMutation({
+    mutationFn: (sourceDir: string) => projectsApi.copyToRepo(project.id, sourceDir, selectedCompanyId ?? undefined),
   });
 
   const useDefaultRepo = async () => {
     if (!defaultRepoUrl) return;
-    persistCodebase({ repoUrl: defaultRepoUrl });
-    ensureRepo.mutate();
 
-    // Check if existing local folder has source code to push
-    const localFolder = codebase.effectiveLocalFolder ?? codebase.localFolder;
-    if (localFolder) {
+    // 1. Check if existing local folder has source code BEFORE changing anything
+    const sourceDir = codebase.effectiveLocalFolder ?? codebase.localFolder;
+    let shouldCopyFiles = false;
+    if (sourceDir) {
       try {
         const { files } = await projectsApi.listWorkspaceFiles(project.id, selectedCompanyId ?? undefined);
-        const hasSourceFiles = files.some((f) => f.name !== ".git" && f.name !== "README.md");
-        if (hasSourceFiles) {
-          const confirmed = window.confirm(
-            `The local folder contains source files. Push them to the new repo?\n\n${localFolder}`,
+        if (files.length > 0) {
+          shouldCopyFiles = window.confirm(
+            `The local folder contains source files. Copy them to the new repo?\n\n${sourceDir}`,
           );
-          if (confirmed) {
-            syncToRepo.mutate();
-          }
         }
       } catch {
         // No local folder or not accessible — skip
       }
+    }
+
+    // 2. Create repo on GitHub if needed
+    try {
+      await githubApi.ensureRepo(selectedCompanyId!, project.name, project.id, defaultRepoUrl);
+    } catch {
+      // 422 = already exists, which is fine
+    }
+
+    // 3. Set the repo URL on the workspace
+    persistCodebase({ repoUrl: defaultRepoUrl });
+
+    // 4. Copy files from old folder to managed repo and push
+    if (shouldCopyFiles && sourceDir) {
+      copyToRepo.mutate(sourceDir);
     }
   };
 
@@ -958,15 +968,15 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               Failed to create repo: {ensureRepo.error instanceof Error ? ensureRepo.error.message : "Unknown error"}
             </p>
           )}
-          {syncToRepo.isPending && (
+          {copyToRepo.isPending && (
             <p className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Loader2 className="h-3 w-3 animate-spin" />
-              Pushing local files to repo...
+              Copying files to repo...
             </p>
           )}
-          {syncToRepo.isError && (
+          {copyToRepo.isError && (
             <p className="text-xs text-destructive">
-              Failed to push files: {syncToRepo.error instanceof Error ? syncToRepo.error.message : "Unknown error"}
+              Failed to copy files: {copyToRepo.error instanceof Error ? copyToRepo.error.message : "Unknown error"}
             </p>
           )}
         </div>

@@ -49,4 +49,9 @@ export const projectsApi = {
       projectPath(projectId, companyId, "/workspace/git-push"),
       message ? { message } : {},
     ),
+  copyToRepo: (projectId: string, sourceDir: string, companyId?: string) =>
+    api.post<{ ok: boolean; copied: boolean; pushed: boolean; warning?: string; conflicted?: boolean }>(
+      projectPath(projectId, companyId, "/workspace/copy-to-repo"),
+      { sourceDir },
+    ),
 };
