@@ -5,6 +5,7 @@ import type { Project } from "@paperclipai/shared";
 import { StatusBadge } from "./StatusBadge";
 import { cn, formatDate } from "../lib/utils";
 import { goalsApi } from "../api/goals";
+import { githubApi } from "../api/github";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
@@ -234,6 +235,29 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     onUpdate?.(data);
   };
   const fieldState = (field: ProjectConfigFieldKey): ProjectFieldSaveState => getFieldSaveState?.(field) ?? "idle";
+
+  const { data: defaultRepoData } = useQuery({
+    queryKey: ["github", "default-repo-url", selectedCompanyId, project.id, project.name],
+    queryFn: () => githubApi.getDefaultRepoUrl(selectedCompanyId!, project.name, project.id),
+    enabled: !!selectedCompanyId,
+    retry: false,
+  });
+
+  const slugify = (name: string) =>
+    name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+
+  const defaultRepoUrl = defaultRepoData?.defaultRepoUrl
+    ?? `https://github.com/AIOTNetwork/${slugify(project.name)}-${project.id.slice(0, 6)}`;
+
+  const ensureRepo = useMutation({
+    mutationFn: () => githubApi.ensureRepo(selectedCompanyId!, project.name, project.id, defaultRepoUrl),
+  });
+
+  const useDefaultRepo = () => {
+    if (!defaultRepoUrl) return;
+    persistCodebase({ repoUrl: defaultRepoUrl });
+    ensureRepo.mutate();
+  };
 
   const { data: allGoals } = useQuery({
     queryKey: queryKeys.goals.list(selectedCompanyId!),
@@ -639,6 +663,22 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                     </div>
                   )}
                   <div className="flex items-center gap-1">
+                    {defaultRepoUrl && codebase.repoUrl !== defaultRepoUrl && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            className="h-6 px-2"
+                            disabled={ensureRepo.isPending || createWorkspace.isPending || updateWorkspace.isPending}
+                            onClick={useDefaultRepo}
+                          >
+                            Set default
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">Switch to {formatRepoUrl(defaultRepoUrl)}</TooltipContent>
+                      </Tooltip>
+                    )}
                     <Button
                       variant="outline"
                       size="xs"
@@ -664,18 +704,34 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               ) : (
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-xs text-muted-foreground">Not set.</div>
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    className="h-6 px-2"
-                    onClick={() => {
-                      setWorkspaceMode("repo");
-                      setWorkspaceRepoUrl(codebase.repoUrl ?? "");
-                      setWorkspaceError(null);
-                    }}
-                  >
-                    Set repo
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          className="h-6 px-2"
+                          disabled={createWorkspace.isPending || updateWorkspace.isPending}
+                          onClick={useDefaultRepo}
+                        >
+                          Use default
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">{formatRepoUrl(defaultRepoUrl)}</TooltipContent>
+                    </Tooltip>
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      className="h-6 px-2"
+                      onClick={() => {
+                        setWorkspaceMode("repo");
+                        setWorkspaceRepoUrl(codebase.repoUrl ?? "");
+                        setWorkspaceError(null);
+                      }}
+                    >
+                      Set repo
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
@@ -824,6 +880,23 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                 >
                   Save
                 </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      className="h-6 px-2"
+                      onClick={() => {
+                        setWorkspaceRepoUrl(defaultRepoUrl);
+                        setWorkspaceMode(null);
+                        useDefaultRepo();
+                      }}
+                    >
+                      Use default
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">{formatRepoUrl(defaultRepoUrl)}</TooltipContent>
+                </Tooltip>
                 <Button
                   variant="ghost"
                   size="xs"
@@ -850,6 +923,17 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
           )}
           {updateWorkspace.isError && (
             <p className="text-xs text-destructive">Failed to update workspace.</p>
+          )}
+          {ensureRepo.isPending && (
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Syncing repo...
+            </p>
+          )}
+          {ensureRepo.isError && (
+            <p className="text-xs text-destructive">
+              Failed to create repo: {ensureRepo.error instanceof Error ? ensureRepo.error.message : "Unknown error"}
+            </p>
           )}
         </div>
 
