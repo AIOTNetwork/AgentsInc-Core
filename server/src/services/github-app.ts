@@ -8,10 +8,9 @@
  * Tokens are short-lived (1hr), generated on-demand, never stored.
  */
 import crypto from "node:crypto";
-import { resolvePaperclipInstanceId } from "../home-paths.js";
 import { eq, and } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { githubInstallations, companies } from "@paperclipai/db";
+import { githubInstallations, companies, companyMemberships, authUsers } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 
 const GITHUB_API = "https://api.github.com";
@@ -125,7 +124,7 @@ export interface GitHubAppService {
   listRepos(companyId: string): Promise<Array<{ fullName: string; private: boolean; defaultBranch: string }>>;
 
   /** Create a repo under the default org for a company/project */
-  createDefaultRepo(companyId: string, repoName: string): Promise<{ fullName: string; cloneUrl: string; private: boolean }>;
+  createDefaultRepo(companyId: string, repoName: string, projectId?: string): Promise<{ fullName: string; cloneUrl: string; private: boolean }>;
 
   /** Delete a GitHub repo by full name (e.g. "org/repo"). Non-fatal. */
   deleteRepo(companyId: string, repoFullName: string): Promise<void>;
@@ -134,7 +133,7 @@ export interface GitHubAppService {
   renameRepo(companyId: string, repoFullName: string, newName: string): Promise<string | null>;
 
   /** Derive the repo name for a company/project (without creating it) */
-  deriveRepoName(companyId: string, projectName: string): string;
+  deriveRepoName(companyId: string, projectName: string, projectId?: string, companyName?: string): string;
 
   /** Parse "org/repo" from a clone URL. Returns null if unparseable. */
   parseRepoFullName(cloneUrl: string): string | null;
@@ -323,15 +322,20 @@ export function githubAppService(db: Db): GitHubAppService {
     return config?.defaultOrg ?? process.env.GITHUB_APP_DEFAULT_ORG ?? "AIOTNetwork";
   }
 
-  function deriveRepoName(companyId: string, projectName: string, companyName?: string): string {
-    const instanceId = resolvePaperclipInstanceId();
+  function getEnvironment(): string {
+    return (process.env.DEPLOY_ENVIRONMENT ?? "dev").toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  }
+
+  function deriveRepoName(companyId: string, projectName: string, projectId?: string, companyName?: string): string {
+    const env = getEnvironment();
+    const companyShort = companyId.slice(0, 8);
+    const projectShort = projectId ? projectId.slice(0, 6) : crypto.createHash("sha256").update(`${companyId}:${projectName}`).digest("hex").slice(0, 6);
     const safeProject = projectName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
     if (companyName) {
       const safeCompany = companyName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
-      return `${instanceId}-${safeCompany}-${safeProject}`.slice(0, 100);
+      return `${env}-${safeCompany}-${companyShort}-${safeProject}-${projectShort}`.slice(0, 100);
     }
-    const companyShort = companyId.slice(0, 8);
-    return `${instanceId}-${companyShort}-${safeProject}`.slice(0, 100);
+    return `${env}-${companyShort}-${safeProject}-${projectShort}`.slice(0, 100);
   }
 
   function parseRepoFullName(cloneUrl: string): string | null {
@@ -344,15 +348,15 @@ export function githubAppService(db: Db): GitHubAppService {
     }
   }
 
-  function isManagedRepo(cloneUrl: string, companyId: string): boolean {
+  function isManagedRepo(cloneUrl: string, _companyId: string): boolean {
     const fullName = parseRepoFullName(cloneUrl);
     if (!fullName) return false;
     const [org, repoName] = fullName.split("/");
     if (!org || !repoName) return false;
     if (org !== getDefaultOrg()) return false;
-    const instanceId = resolvePaperclipInstanceId();
-    const companyShort = companyId.slice(0, 8);
-    return repoName.startsWith(`${instanceId}-${companyShort}-`);
+    const env = getEnvironment();
+    // Match pattern: {env}-{companyName}-{project}
+    return repoName.startsWith(`${env}-`);
   }
 
   // --- CRUD ---
@@ -360,11 +364,12 @@ export function githubAppService(db: Db): GitHubAppService {
   async function createDefaultRepo(
     companyId: string,
     repoName: string,
+    projectId?: string,
   ): Promise<{ fullName: string; cloneUrl: string; private: boolean }> {
     const authToken = await resolveAuthToken(companyId);
     if (!authToken) throw new Error("No GitHub credentials available (need App installation or GITHUB_PAT)");
 
-    // Look up company name for a descriptive repo name
+    // Look up company name and owners for a descriptive repo name + README
     const companyRow = await db
       .select({ name: companies.name })
       .from(companies)
@@ -372,9 +377,27 @@ export function githubAppService(db: Db): GitHubAppService {
       .then((rows) => rows[0] ?? null);
     const companyName = companyRow?.name ?? null;
 
+    // Fetch company members (owners/admins) for README
+    const members = await db
+      .select({
+        name: authUsers.name,
+        email: authUsers.email,
+        role: companyMemberships.membershipRole,
+      })
+      .from(companyMemberships)
+      .innerJoin(authUsers, eq(authUsers.id, companyMemberships.principalId))
+      .where(
+        and(
+          eq(companyMemberships.companyId, companyId),
+          eq(companyMemberships.status, "active"),
+          eq(companyMemberships.principalType, "user"),
+        ),
+      )
+      .limit(10);
+
     const org = getDefaultOrg();
-    const safeName = deriveRepoName(companyId, repoName, companyName ?? undefined);
-    const instanceId = resolvePaperclipInstanceId();
+    const safeName = deriveRepoName(companyId, repoName, projectId, companyName ?? undefined);
+    const env = getEnvironment();
 
     const res = await fetch(`${GITHUB_API}/orgs/${org}/repos`, {
       method: "POST",
@@ -387,7 +410,7 @@ export function githubAppService(db: Db): GitHubAppService {
         name: safeName,
         private: true,
         auto_init: false,
-        description: `Managed by AgentsInc (${instanceId}) for ${companyName ?? companyId}, project: ${repoName}`,
+        description: `Managed by AgentsInc (${env}) for ${companyName ?? companyId}, project: ${repoName}`,
       }),
     });
 
@@ -409,9 +432,10 @@ export function githubAppService(db: Db): GitHubAppService {
         companyName: companyName ?? companyId,
         companyId,
         projectName: repoName,
-        instanceId,
+        environment: env,
         repoFullName: data.full_name,
         createdAt: new Date().toISOString(),
+        owners: members,
       });
       const encodedContent = Buffer.from(readmeContent).toString("base64");
       await fetch(`${GITHUB_API}/repos/${data.full_name}/contents/README.md`, {
@@ -438,10 +462,15 @@ export function githubAppService(db: Db): GitHubAppService {
     companyName: string;
     companyId: string;
     projectName: string;
-    instanceId: string;
+    environment: string;
     repoFullName: string;
     createdAt: string;
+    owners?: Array<{ name: string; email: string; role: string | null }>;
   }): string {
+    const ownerRows = (info.owners ?? []).map(
+      (o) => `| ${o.name} | ${o.email} | ${o.role ?? "member"} |`,
+    );
+
     return [
       `# ${info.companyName} / ${info.projectName}`,
       ``,
@@ -454,10 +483,20 @@ export function githubAppService(db: Db): GitHubAppService {
       `| **Company** | ${info.companyName} |`,
       `| **Company ID** | \`${info.companyId}\` |`,
       `| **Project** | ${info.projectName} |`,
-      `| **Instance** | \`${info.instanceId}\` |`,
+      `| **Environment** | \`${info.environment}\` |`,
       `| **Repo** | \`${info.repoFullName}\` |`,
       `| **Created** | ${info.createdAt} |`,
       ``,
+      ...(ownerRows.length > 0
+        ? [
+            `## Owners`,
+            ``,
+            `| Name | Email | Role |`,
+            `|------|-------|------|`,
+            ...ownerRows,
+            ``,
+          ]
+        : []),
       `## For Admins / Debugging`,
       ``,
       `### Architecture`,

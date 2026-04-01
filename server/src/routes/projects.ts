@@ -107,7 +107,7 @@ export function projectRoutes(db: Db) {
       try {
         const { githubAppService } = await import("../services/github-app.js");
         const github = githubAppService(db);
-        const repo = await github.createDefaultRepo(companyId, project.name);
+        const repo = await github.createDefaultRepo(companyId, project.name, project.id);
         const createdWorkspace = await svc.createWorkspace(project.id, {
           name: project.name,
           repoUrl: repo.cloneUrl,
@@ -167,7 +167,7 @@ export function projectRoutes(db: Db) {
         if (!ws.repoUrl || !github.isManagedRepo(ws.repoUrl, project.companyId)) continue;
         const fullName = github.parseRepoFullName(ws.repoUrl);
         if (!fullName) continue;
-        const newRepoName = github.deriveRepoName(project.companyId, project.name);
+        const newRepoName = github.deriveRepoName(project.companyId, project.name, project.id);
         const newCloneUrl = await github.renameRepo(project.companyId, fullName, newRepoName);
         if (newCloneUrl) {
           await svc.updateWorkspace(project.id, ws.id, { repoUrl: newCloneUrl });

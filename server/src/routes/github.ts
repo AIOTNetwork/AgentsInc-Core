@@ -8,7 +8,9 @@
  * POST /api/github/disconnect  → remove installation
  */
 import { Router } from "express";
+import { eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import { companies } from "@paperclipai/db";
 import { githubAppService } from "../services/github-app.js";
 import { assertCompanyAccess } from "./authz.js";
 
@@ -109,6 +111,44 @@ export function githubRoutes(db: Db) {
     });
   });
 
+  // Get the default repo URL for a project
+  router.get("/github/default-repo-url", async (req, res) => {
+    const companyId = typeof req.query.companyId === "string" ? req.query.companyId : null;
+    const projectName = typeof req.query.projectName === "string" ? req.query.projectName : null;
+    const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
+    if (!companyId || !projectName) {
+      res.status(400).json({ error: "companyId and projectName required" });
+      return;
+    }
+    assertCompanyAccess(req, companyId);
+
+    const defaultOrg = process.env.GITHUB_APP_DEFAULT_ORG ?? "AIOTNetwork";
+
+    let companyName: string | undefined;
+    try {
+      const row = await db
+        .select({ name: companies.name })
+        .from(companies)
+        .where(eq(companies.id, companyId))
+        .then((rows) => rows[0] ?? null);
+      if (row) companyName = row.name;
+    } catch {
+      // table may not exist yet
+    }
+
+    const repoName = github.deriveRepoName(companyId, projectName, projectId, companyName);
+
+    let account = defaultOrg;
+    try {
+      const installation = await github.getInstallation(companyId);
+      if (installation) account = installation.accountLogin;
+    } catch {
+      // DB table may not exist yet — fall back to defaultOrg
+    }
+
+    res.json({ defaultRepoUrl: `https://github.com/${account}/${repoName}` });
+  });
+
   // List repos accessible to the company's installation
   router.get("/github/repos", async (req, res) => {
     const companyId = typeof req.query.companyId === "string" ? req.query.companyId : null;
@@ -133,6 +173,65 @@ export function githubRoutes(db: Db) {
 
     await github.removeInstallation(companyId);
     res.json({ ok: true });
+  });
+
+  // Ensure a repo exists on GitHub — creates it if missing
+  // Validates that the requested repoUrl matches the expected default before creating.
+  router.post("/github/ensure-repo", async (req, res) => {
+    const companyId = typeof req.body.companyId === "string" ? req.body.companyId : null;
+    const projectName = typeof req.body.projectName === "string" ? req.body.projectName : null;
+    const projectId = typeof req.body.projectId === "string" ? req.body.projectId : undefined;
+    const repoUrl = typeof req.body.repoUrl === "string" ? req.body.repoUrl : null;
+    if (!companyId || !projectName) {
+      res.status(400).json({ error: "companyId and projectName required" });
+      return;
+    }
+    assertCompanyAccess(req, companyId);
+
+    // Derive the expected default repo URL
+    const defaultOrg = process.env.GITHUB_APP_DEFAULT_ORG ?? "AIOTNetwork";
+    let companyName: string | undefined;
+    try {
+      const row = await db
+        .select({ name: companies.name })
+        .from(companies)
+        .where(eq(companies.id, companyId))
+        .then((rows) => rows[0] ?? null);
+      if (row) companyName = row.name;
+    } catch { /* table may not exist */ }
+
+    const expectedRepoName = github.deriveRepoName(companyId, projectName, projectId, companyName);
+
+    let account = defaultOrg;
+    try {
+      const installation = await github.getInstallation(companyId);
+      if (installation) account = installation.accountLogin;
+    } catch { /* fall back to defaultOrg */ }
+
+    const expectedUrl = `https://github.com/${account}/${expectedRepoName}`;
+
+    // Validate: if a repoUrl was provided, it must match the expected default
+    if (repoUrl && repoUrl !== expectedUrl) {
+      res.status(400).json({
+        error: "Repo URL does not match expected default",
+        expected: expectedUrl,
+        received: repoUrl,
+      });
+      return;
+    }
+
+    try {
+      const repo = await github.createDefaultRepo(companyId, projectName, projectId);
+      res.json({ created: true, fullName: repo.fullName, cloneUrl: repo.cloneUrl });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // GitHub returns 422 when repo already exists
+      if (msg.includes("422")) {
+        res.json({ created: false, message: "Repo already exists" });
+        return;
+      }
+      res.status(500).json({ error: msg });
+    }
   });
 
   // Get a credential-injected clone URL for a repo (short-lived token)
