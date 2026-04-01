@@ -754,6 +754,7 @@ export function projectRoutes(db: Db) {
    * Used when switching to a default repo — migrates existing source into the new repo.
    */
   router.post("/projects/:id/workspace/copy-to-repo", async (req, res) => {
+    try {
     const project = await svc.getById(req.params.id);
     if (!project) throw notFound("Project not found");
     assertCompanyAccess(req, project.companyId);
@@ -784,21 +785,29 @@ export function projectRoutes(db: Db) {
     }
 
     // Copy files from source to managed folder (excluding .git, node_modules)
-    const { execFile: execFileCb } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execFileAsync = promisify(execFileCb);
+    const COPY_EXCLUDES = new Set([".git", "node_modules", ".next", ".nuxt", "dist", "build", ".cache", "__pycache__"]);
+
+    async function copyDir(src: string, dest: string): Promise<void> {
+      await fsPromises.mkdir(dest, { recursive: true });
+      const entries = await fsPromises.readdir(src, { withFileTypes: true });
+      for (const entry of entries) {
+        if (COPY_EXCLUDES.has(entry.name)) continue;
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+        if (entry.isDirectory()) {
+          await copyDir(srcPath, destPath);
+        } else if (entry.isFile() || entry.isSymbolicLink()) {
+          await fsPromises.copyFile(srcPath, destPath);
+        }
+      }
+    }
 
     try {
-      await execFileAsync("rsync", [
-        "-a", "--delete",
-        "--exclude", ".git",
-        "--exclude", "node_modules",
-        `${sourceDir}/`,
-        `${managedDir}/`,
-      ], { timeout: 60_000 });
+      await copyDir(sourceDir, managedDir);
       logger.info({ sourceDir, managedDir, projectId: project.id }, "[workspace] copied files to managed repo");
     } catch (copyErr) {
       const msg = copyErr instanceof Error ? copyErr.message : String(copyErr);
+      logger.error({ err: msg, sourceDir, managedDir, projectId: project.id }, "[workspace] file copy failed");
       res.status(500).json({ error: "copy_failed", message: msg });
       return;
     }
@@ -826,6 +835,13 @@ export function projectRoutes(db: Db) {
       warning: pushResult.warning,
       conflicted: pushResult.conflicted,
     });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg, projectId: req.params.id, route: "copy-to-repo" }, "[workspace] copy-to-repo failed");
+      if (!res.headersSent) {
+        res.status(500).json({ error: "internal_error", message: msg });
+      }
+    }
   });
 
   // --- Workspace Git Push (commit local → merge to main → push main) ---
