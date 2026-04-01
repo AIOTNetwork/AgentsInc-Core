@@ -696,7 +696,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                             disabled={ensureRepo.isPending || createWorkspace.isPending || updateWorkspace.isPending}
                             onClick={useDefaultRepo}
                           >
-                            Set default
+                            Use default
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent side="top">Switch to {formatRepoUrl(defaultRepoUrl)}</TooltipContent>
