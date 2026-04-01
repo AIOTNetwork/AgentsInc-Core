@@ -3,8 +3,9 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { notFound } from "../errors.js";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
+import { getS3LogClient } from "./s3-log-store-utils.js";
 
-export type RunLogStoreType = "local_file";
+export type RunLogStoreType = "local_file" | "s3";
 
 export interface RunLogHandle {
   store: RunLogStoreType;
@@ -145,12 +146,85 @@ function createLocalFileRunLogStore(basePath: string): RunLogStore {
   };
 }
 
+function createS3RunLogStore(): RunLogStore {
+  const client = getS3LogClient();
+
+  return {
+    async begin(input) {
+      const [companyId, agentId] = safeSegments(input.companyId, input.agentId);
+      const runId = safeSegments(input.runId)[0]!;
+      const key = `data/run-logs/${companyId}/${agentId}/${runId}.ndjson`;
+      client.createBuffer(key);
+      return { store: "s3" as const, logRef: key };
+    },
+
+    async append(handle, event) {
+      if (handle.store !== "s3") return;
+      const buffer = client.getBuffer(handle.logRef);
+      if (!buffer) return;
+      const line = JSON.stringify({
+        ts: event.ts,
+        stream: event.stream,
+        chunk: event.chunk,
+      });
+      client.appendToBuffer(buffer, line);
+    },
+
+    async finalize(handle) {
+      if (handle.store !== "s3") {
+        return { bytes: 0, compressed: false };
+      }
+      const buffer = client.getBuffer(handle.logRef);
+      if (!buffer) return { bytes: 0, compressed: false };
+      const { bytes, sha256 } = await client.flush(buffer);
+      return { bytes, sha256, compressed: false };
+    },
+
+    async read(handle, opts) {
+      if (handle.store !== "s3") {
+        throw notFound("Run log not found");
+      }
+      const offset = opts?.offset ?? 0;
+      const limitBytes = opts?.limitBytes ?? 256_000;
+      const buffer = client.getBuffer(handle.logRef);
+      if (buffer) {
+        return client.readFromBuffer(buffer, offset, limitBytes);
+      }
+      return client.readRange(handle.logRef, offset, limitBytes);
+    },
+  };
+}
+
+let cachedS3Store: RunLogStore | null = null;
+
+function getOrCreateS3RunLogStore(): RunLogStore {
+  if (cachedS3Store) return cachedS3Store;
+  cachedS3Store = createS3RunLogStore();
+  return cachedS3Store;
+}
+
 let cachedStore: RunLogStore | null = null;
 
-export function getRunLogStore() {
+export function getRunLogStore(): RunLogStore {
   if (cachedStore) return cachedStore;
-  const basePath = process.env.RUN_LOG_BASE_PATH ?? path.resolve(resolvePaperclipInstanceRoot(), "data", "run-logs");
-  cachedStore = createLocalFileRunLogStore(basePath);
+  if (process.env.PAPERCLIP_STORAGE_PROVIDER === "s3") {
+    cachedStore = getOrCreateS3RunLogStore();
+  } else {
+    const basePath = process.env.RUN_LOG_BASE_PATH ?? path.resolve(resolvePaperclipInstanceRoot(), "data", "run-logs");
+    cachedStore = createLocalFileRunLogStore(basePath);
+  }
   return cachedStore;
+}
+
+/** Dispatches read to the correct store based on handle.store value. */
+export async function readRunLogByHandle(
+  handle: RunLogHandle,
+  opts?: RunLogReadOptions,
+): Promise<RunLogReadResult> {
+  if (handle.store === "s3") {
+    return getOrCreateS3RunLogStore().read(handle, opts);
+  }
+  const basePath = process.env.RUN_LOG_BASE_PATH ?? path.resolve(resolvePaperclipInstanceRoot(), "data", "run-logs");
+  return createLocalFileRunLogStore(basePath).read(handle, opts);
 }
 

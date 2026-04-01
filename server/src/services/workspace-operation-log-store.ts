@@ -3,8 +3,9 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { notFound } from "../errors.js";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
+import { getS3LogClient } from "./s3-log-store-utils.js";
 
-export type WorkspaceOperationLogStoreType = "local_file";
+export type WorkspaceOperationLogStoreType = "local_file" | "s3";
 
 export interface WorkspaceOperationLogHandle {
   store: WorkspaceOperationLogStoreType;
@@ -145,12 +146,86 @@ function createLocalFileWorkspaceOperationLogStore(basePath: string): WorkspaceO
   };
 }
 
+function createS3WorkspaceOperationLogStore(): WorkspaceOperationLogStore {
+  const client = getS3LogClient();
+
+  return {
+    async begin(input) {
+      const [companyId] = safeSegments(input.companyId);
+      const operationId = safeSegments(input.operationId)[0]!;
+      const key = `data/workspace-operation-logs/${companyId}/${operationId}.ndjson`;
+      client.createBuffer(key);
+      return { store: "s3" as const, logRef: key };
+    },
+
+    async append(handle, event) {
+      if (handle.store !== "s3") return;
+      const buffer = client.getBuffer(handle.logRef);
+      if (!buffer) return;
+      const line = JSON.stringify({
+        ts: event.ts,
+        stream: event.stream,
+        chunk: event.chunk,
+      });
+      client.appendToBuffer(buffer, line);
+    },
+
+    async finalize(handle) {
+      if (handle.store !== "s3") {
+        return { bytes: 0, compressed: false };
+      }
+      const buffer = client.getBuffer(handle.logRef);
+      if (!buffer) return { bytes: 0, compressed: false };
+      const { bytes, sha256 } = await client.flush(buffer);
+      return { bytes, sha256, compressed: false };
+    },
+
+    async read(handle, opts) {
+      if (handle.store !== "s3") {
+        throw notFound("Workspace operation log not found");
+      }
+      const offset = opts?.offset ?? 0;
+      const limitBytes = opts?.limitBytes ?? 256_000;
+      const buffer = client.getBuffer(handle.logRef);
+      if (buffer) {
+        return client.readFromBuffer(buffer, offset, limitBytes);
+      }
+      return client.readRange(handle.logRef, offset, limitBytes);
+    },
+  };
+}
+
+let cachedS3Store: WorkspaceOperationLogStore | null = null;
+
+function getOrCreateS3WorkspaceOperationLogStore(): WorkspaceOperationLogStore {
+  if (cachedS3Store) return cachedS3Store;
+  cachedS3Store = createS3WorkspaceOperationLogStore();
+  return cachedS3Store;
+}
+
 let cachedStore: WorkspaceOperationLogStore | null = null;
 
-export function getWorkspaceOperationLogStore() {
+export function getWorkspaceOperationLogStore(): WorkspaceOperationLogStore {
   if (cachedStore) return cachedStore;
+  if (process.env.PAPERCLIP_STORAGE_PROVIDER === "s3") {
+    cachedStore = getOrCreateS3WorkspaceOperationLogStore();
+  } else {
+    const basePath = process.env.WORKSPACE_OPERATION_LOG_BASE_PATH
+      ?? path.resolve(resolvePaperclipInstanceRoot(), "data", "workspace-operation-logs");
+    cachedStore = createLocalFileWorkspaceOperationLogStore(basePath);
+  }
+  return cachedStore;
+}
+
+/** Dispatches read to the correct store based on handle.store value. */
+export async function readWorkspaceOperationLogByHandle(
+  handle: WorkspaceOperationLogHandle,
+  opts?: WorkspaceOperationLogReadOptions,
+): Promise<WorkspaceOperationLogReadResult> {
+  if (handle.store === "s3") {
+    return getOrCreateS3WorkspaceOperationLogStore().read(handle, opts);
+  }
   const basePath = process.env.WORKSPACE_OPERATION_LOG_BASE_PATH
     ?? path.resolve(resolvePaperclipInstanceRoot(), "data", "workspace-operation-logs");
-  cachedStore = createLocalFileWorkspaceOperationLogStore(basePath);
-  return cachedStore;
+  return createLocalFileWorkspaceOperationLogStore(basePath).read(handle, opts);
 }
