@@ -20,7 +20,7 @@ import {
 import { conflict, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { publishLiveEvent } from "./live-events.js";
-import { getRunLogStore, type RunLogHandle } from "./run-log-store.js";
+import { getRunLogStore, readRunLogByHandle, type RunLogHandle, type RunLogStoreType } from "./run-log-store.js";
 import { getServerAdapter, runningProcesses } from "../adapters/index.js";
 import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec, UsageSummary } from "../adapters/index.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
@@ -4321,9 +4321,9 @@ export function heartbeatService(db: Db) {
       if (!run) throw notFound("Heartbeat run not found");
       if (!run.logStore || !run.logRef) throw notFound("Run log not found");
 
-      const result = await runLogStore.read(
+      const result = await readRunLogByHandle(
         {
-          store: run.logStore as "local_file",
+          store: run.logStore as RunLogStoreType,
           logRef: run.logRef,
         },
         opts,

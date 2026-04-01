@@ -6,7 +6,7 @@ import { asc, desc, eq, inArray, isNull, or, and } from "drizzle-orm";
 import { notFound } from "../errors.js";
 import { redactCurrentUserText, redactCurrentUserValue } from "../log-redaction.js";
 import { instanceSettingsService } from "./instance-settings.js";
-import { getWorkspaceOperationLogStore } from "./workspace-operation-log-store.js";
+import { getWorkspaceOperationLogStore, readWorkspaceOperationLogByHandle, type WorkspaceOperationLogStoreType } from "./workspace-operation-log-store.js";
 
 type WorkspaceOperationRow = typeof workspaceOperations.$inferSelect;
 
@@ -237,9 +237,9 @@ export function workspaceOperationService(db: Db) {
       if (!operation) throw notFound("Workspace operation not found");
       if (!operation.logStore || !operation.logRef) throw notFound("Workspace operation log not found");
 
-      const result = await logStore.read(
+      const result = await readWorkspaceOperationLogByHandle(
         {
-          store: operation.logStore as "local_file",
+          store: operation.logStore as WorkspaceOperationLogStoreType,
           logRef: operation.logRef,
         },
         opts,

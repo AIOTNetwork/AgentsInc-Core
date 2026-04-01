@@ -36,6 +36,7 @@ import {
 } from "./services/index.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
+import { ensureS3BucketExists } from "./services/s3-log-store-utils.js";
 import { setInstanceAdminEmails, setDemoEmails } from "./instance-admin-emails.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -525,6 +526,10 @@ export async function startServer(): Promise<StartedServer> {
     serverPort: listenPort,
     databasePort: resolvedEmbeddedPostgresPort,
   });
+  if (config.storageProvider === "s3") {
+    await ensureS3BucketExists();
+  }
+
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
   const feedback = feedbackService(db as any, {
