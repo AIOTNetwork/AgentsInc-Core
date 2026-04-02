@@ -517,11 +517,23 @@ export function agentInstructionsService(options?: { s3Sync?: InstructionsS3Sync
       };
     }
     if (!state.rootPath) throw notFound("Agent instructions bundle is not configured");
-    const absolutePath = resolvePathWithinRoot(state.rootPath, relativePath);
-    const [content, stat] = await Promise.all([
+    let absolutePath = resolvePathWithinRoot(state.rootPath, relativePath);
+    let [content, stat] = await Promise.all([
       fs.readFile(absolutePath, "utf8").catch(() => null),
       fs.stat(absolutePath).catch(() => null),
     ]);
+    // If local file missing, try restoring full bundle from S3
+    if ((content === null || !stat?.isFile()) && s3Sync?.enabled) {
+      const managedRoot = resolveManagedInstructionsRoot(agent);
+      const restored = await s3Sync.restoreFromS3(agent.companyId, agent.id, managedRoot);
+      if (restored) {
+        absolutePath = resolvePathWithinRoot(managedRoot, relativePath);
+        [content, stat] = await Promise.all([
+          fs.readFile(absolutePath, "utf8").catch(() => null),
+          fs.stat(absolutePath).catch(() => null),
+        ]);
+      }
+    }
     if (content === null || !stat?.isFile()) throw notFound("Instructions file not found");
     const normalizedPath = normalizeRelativeFilePath(relativePath);
     return {
