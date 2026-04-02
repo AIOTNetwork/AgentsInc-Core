@@ -838,6 +838,13 @@ export function projectRoutes(db: Db) {
       }
     }
 
+    // Ensure git identity is configured (needed in containers without global git config)
+    const { execFile: execGit } = await import("node:child_process");
+    const { promisify: promisifyGit } = await import("node:util");
+    const execGitAsync = promisifyGit(execGit);
+    await execGitAsync("git", ["-C", managedDir, "config", "user.email", "agents@agentcompanies.io"], { timeout: 5_000 }).catch(() => {});
+    await execGitAsync("git", ["-C", managedDir, "config", "user.name", "AgentsInc"], { timeout: 5_000 }).catch(() => {});
+
     // Commit and push
     const credUrl = await getCredentialUrl(project.companyId, repoUrl);
     const baseBranch = project.codebase.repoRef ?? "main";
