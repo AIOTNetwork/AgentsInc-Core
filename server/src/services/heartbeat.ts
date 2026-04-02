@@ -1533,6 +1533,31 @@ export function heartbeatService(db: Db) {
           .then((stats) => stats.isDirectory())
           .catch(() => false);
         if (projectCwdExists) {
+          // If the directory exists but lacks .git (e.g. S3 restore excludes .git),
+          // route through ensureManagedProjectWorkspace to re-clone from remote.
+          const repoUrl = readNonEmptyString(workspace.repoUrl);
+          if (repoUrl) {
+            const gitDirExists = await fs
+              .stat(path.resolve(projectCwd, ".git"))
+              .then((entry) => entry.isDirectory())
+              .catch(() => false);
+            if (!gitDirExists) {
+              try {
+                const managedWorkspace = await ensureManagedProjectWorkspace(db, {
+                  companyId: agent.companyId,
+                  projectId: workspaceProjectId ?? resolvedProjectId ?? workspace.projectId,
+                  repoUrl,
+                });
+                projectCwd = managedWorkspace.cwd;
+                managedWorkspaceWarning = managedWorkspace.warning;
+              } catch (error) {
+                if (preferredWorkspace?.id === workspace.id) {
+                  preferredWorkspaceWarning = error instanceof Error ? error.message : String(error);
+                }
+                continue;
+              }
+            }
+          }
           return {
             cwd: projectCwd,
             source: "project_primary" as const,
