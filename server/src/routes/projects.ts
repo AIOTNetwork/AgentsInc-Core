@@ -799,7 +799,8 @@ export function projectRoutes(db: Db) {
           const { execFile: execFileCb } = await import("node:child_process");
           const { promisify } = await import("node:util");
           const execFileAsync = promisify(execFileCb);
-          await execFileAsync("git", ["-C", managedDir, "init"], { timeout: 10_000 });
+          const initBranch = project.codebase.repoRef ?? "main";
+          await execFileAsync("git", ["-C", managedDir, "init", "-b", initBranch], { timeout: 10_000 });
           await execFileAsync("git", ["-C", managedDir, "remote", "add", "origin", repoUrl], { timeout: 10_000 });
         }
       }
