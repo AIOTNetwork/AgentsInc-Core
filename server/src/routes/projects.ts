@@ -877,6 +877,52 @@ export function projectRoutes(db: Db) {
       }
     }
 
+    // If push failed, create an issue for an agent to resolve
+    if (!pushResult.ok) {
+      try {
+        const { issueService: issueSvcFactory } = await import("../services/index.js");
+        const issueSvc = issueSvcFactory(db);
+
+        const conflictFilesList = pushResult.conflictFiles?.length
+          ? pushResult.conflictFiles.map((f: string) => `- \`${f}\``).join("\n")
+          : "_(no specific files identified)_";
+
+        const description = [
+          `## Git Push Failed After File Copy`,
+          ``,
+          `Files were copied from the old workspace to the new repo but the push failed.`,
+          ``,
+          `**Source folder:** \`${sourceDir}\``,
+          `**Target repo:** \`${repoUrl}\``,
+          `**Managed folder:** \`${managedDir}\``,
+          `**Base branch:** \`${baseBranch}\``,
+          `**Error:** ${pushResult.warning ?? "unknown"}`,
+          `**Conflicted:** ${pushResult.conflicted ? "yes" : "no"}`,
+          ``,
+          pushResult.conflicted ? `### Conflicted files\n${conflictFilesList}\n` : "",
+          `### Steps to resolve`,
+          `1. Navigate to the managed folder: \`cd ${managedDir}\``,
+          `2. Pull latest from origin: \`git pull origin ${baseBranch} --rebase\``,
+          `3. Resolve any conflicts`,
+          `4. Commit and push: \`git push origin ${baseBranch}\``,
+          ``,
+          `Alternatively, trigger a workspace sync from the project settings.`,
+        ].filter(Boolean).join("\n");
+
+        await issueSvc.create(project.companyId, {
+          title: `Push failed after copying files to ${repoUrl.split("/").pop() ?? "repo"}`,
+          projectId: project.id,
+          priority: "high",
+          status: "todo",
+          description,
+          originKind: "system",
+        });
+        logger.info({ projectId: project.id, repoUrl }, "[workspace] created issue for failed push after copy");
+      } catch (issueErr) {
+        logger.warn({ err: issueErr }, "[workspace] failed to create issue for push failure");
+      }
+    }
+
     res.json({
       ok: pushResult.ok,
       copied: true,
