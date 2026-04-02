@@ -255,48 +255,65 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     mutationFn: () => githubApi.ensureRepo(selectedCompanyId!, project.name, project.id, defaultRepoUrl),
   });
 
+  const [useDefaultPending, setUseDefaultPending] = useState(false);
+
   const useDefaultRepo = async () => {
-    if (!defaultRepoUrl) return;
+    if (!defaultRepoUrl || useDefaultPending) return;
+    setUseDefaultPending(true);
+    setCopyStatus("idle");
+    setCopyError(null);
+    setWorkspaceError(null);
 
-    // 1. Check if existing local folder has source code BEFORE changing anything
-    const sourceDir = codebase.effectiveLocalFolder ?? codebase.localFolder;
-    let shouldCopyFiles = false;
-    if (sourceDir) {
-      try {
-        const { files } = await projectsApi.listWorkspaceFiles(project.id, selectedCompanyId ?? undefined);
-        if (files.length > 0) {
-          shouldCopyFiles = window.confirm(
-            `The local folder contains source files. Copy them to the new repo?\n\n${sourceDir}`,
-          );
-        }
-      } catch {
-        // No local folder or not accessible — skip
-      }
-    }
-
-    // 2. Create repo on GitHub if needed
     try {
-      await githubApi.ensureRepo(selectedCompanyId!, project.name, project.id, defaultRepoUrl);
-    } catch {
-      // 422 = already exists, which is fine
-    }
-
-    // 3. Set repo URL
-    persistCodebase({ repoUrl: defaultRepoUrl });
-
-    // 4. Copy files from old folder to managed repo and push
-    if (shouldCopyFiles && sourceDir) {
-      setCopyStatus("copying");
-      setCopyError(null);
-      try {
-        await projectsApi.copyToRepo(project.id, sourceDir, selectedCompanyId ?? undefined);
-        setCopyStatus("done");
-        invalidateProject();
-      } catch (err) {
-        setCopyStatus("error");
-        const msg = (err as any)?.body?.message ?? (err instanceof Error ? err.message : "Unknown error");
-        setCopyError(msg);
+      // 1. Check if existing local folder has source code BEFORE changing anything
+      const sourceDir = codebase.effectiveLocalFolder ?? codebase.localFolder;
+      let shouldCopyFiles = false;
+      if (sourceDir) {
+        try {
+          const { files } = await projectsApi.listWorkspaceFiles(project.id, selectedCompanyId ?? undefined);
+          if (files.length > 0) {
+            shouldCopyFiles = window.confirm(
+              `The local folder contains source files. Copy them to the new repo?\n\n${sourceDir}`,
+            );
+          }
+        } catch (err) {
+          // Only ignore 404 (no folder); surface other errors
+          if ((err as any)?.status !== 404) {
+            console.warn("[useDefaultRepo] Failed to check local files:", err);
+          }
+        }
       }
+
+      // 2. Create repo on GitHub if needed
+      try {
+        await githubApi.ensureRepo(selectedCompanyId!, project.name, project.id, defaultRepoUrl);
+      } catch (err) {
+        // 422 = already exists, which is fine. Other errors should stop the flow.
+        if ((err as any)?.status !== 422) {
+          const msg = (err as any)?.body?.message ?? (err instanceof Error ? err.message : "Failed to create repo");
+          setWorkspaceError(msg);
+          return;
+        }
+      }
+
+      // 3. Set repo URL
+      persistCodebase({ repoUrl: defaultRepoUrl });
+
+      // 4. Copy files from old folder to managed repo and push
+      if (shouldCopyFiles && sourceDir) {
+        setCopyStatus("copying");
+        try {
+          await projectsApi.copyToRepo(project.id, sourceDir, selectedCompanyId ?? undefined);
+          setCopyStatus("done");
+          invalidateProject();
+        } catch (err) {
+          setCopyStatus("error");
+          const msg = (err as any)?.body?.message ?? (err instanceof Error ? err.message : "Unknown error");
+          setCopyError(msg);
+        }
+      }
+    } finally {
+      setUseDefaultPending(false);
     }
   };
 

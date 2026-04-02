@@ -563,7 +563,8 @@ export function projectRoutes(db: Db) {
       const { githubAppService } = await import("../services/github-app.js");
       const github = githubAppService(db);
       return await github.getCredentialUrl(companyId, repoUrl);
-    } catch {
+    } catch (err) {
+      logger.warn({ err, companyId, repoUrl }, "[workspace] Failed to get credential URL, using bare URL");
       return repoUrl;
     }
   }

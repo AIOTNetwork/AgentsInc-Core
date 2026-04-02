@@ -13,6 +13,7 @@ import type { Db } from "@paperclipai/db";
 import { companies } from "@paperclipai/db";
 import { githubAppService } from "../services/github-app.js";
 import { assertCompanyAccess } from "./authz.js";
+import { logger } from "../middleware/logger.js";
 
 const GITHUB_APP_SLUG = process.env.GITHUB_APP_SLUG ?? "agentsinc";
 
@@ -132,8 +133,8 @@ export function githubRoutes(db: Db) {
         .where(eq(companies.id, companyId))
         .then((rows) => rows[0] ?? null);
       if (row) companyName = row.name;
-    } catch {
-      // table may not exist yet
+    } catch (err) {
+      logger.warn({ err, companyId, route: "default-repo-url" }, "[github] Failed to fetch company name");
     }
 
     const repoName = github.deriveRepoName(companyId, projectName, projectId, companyName);
@@ -142,8 +143,8 @@ export function githubRoutes(db: Db) {
     try {
       const installation = await github.getInstallation(companyId);
       if (installation) account = installation.accountLogin;
-    } catch {
-      // DB table may not exist yet — fall back to defaultOrg
+    } catch (err) {
+      logger.warn({ err, companyId, route: "default-repo-url" }, "[github] Failed to fetch installation, using defaultOrg");
     }
 
     res.json({ defaultRepoUrl: `https://github.com/${account}/${repoName}` });
@@ -198,7 +199,9 @@ export function githubRoutes(db: Db) {
         .where(eq(companies.id, companyId))
         .then((rows) => rows[0] ?? null);
       if (row) companyName = row.name;
-    } catch { /* table may not exist */ }
+    } catch (err) {
+      logger.warn({ err, companyId, route: "ensure-repo" }, "[github] Failed to fetch company name");
+    }
 
     const expectedRepoName = github.deriveRepoName(companyId, projectName, projectId, companyName);
 
@@ -206,7 +209,9 @@ export function githubRoutes(db: Db) {
     try {
       const installation = await github.getInstallation(companyId);
       if (installation) account = installation.accountLogin;
-    } catch { /* fall back to defaultOrg */ }
+    } catch (err) {
+      logger.warn({ err, companyId, route: "ensure-repo" }, "[github] Failed to fetch installation, using defaultOrg");
+    }
 
     const expectedUrl = `https://github.com/${account}/${expectedRepoName}`;
 

@@ -83,7 +83,7 @@ export async function gitFetchAndReset(
       logger.warn({ cwd, branch, err: msg, durationMs: Date.now() - start, op: "fetch+reset" }, "[git] fetch+reset failed");
       return { ok: false, warning: `git fetch+reset failed: ${msg}` };
     } finally {
-      await clearRemoteCredentials(cwd).catch(() => {});
+      await clearRemoteCredentials(cwd).catch((e) => logger.debug({ err: e instanceof Error ? e.message : String(e) }, "[git] cleanup op failed"));
     }
   });
 }
@@ -174,7 +174,7 @@ export async function gitMergeLocalAndPushBase(opts: {
       await execFile("git", ["-C", mainCwd, "checkout", baseBranch], { timeout: GIT_TIMEOUT });
 
       logger.info({ cwd: mainCwd, baseBranch, op: "pull" }, "[git] pulling base branch (ff-only)");
-      await execFile("git", ["-C", mainCwd, "pull", "origin", baseBranch, "--ff-only"], { timeout: GIT_TIMEOUT }).catch(() => {});
+      await execFile("git", ["-C", mainCwd, "pull", "origin", baseBranch, "--ff-only"], { timeout: GIT_TIMEOUT }).catch((e) => logger.debug({ err: e instanceof Error ? e.message : String(e) }, "[git] cleanup op failed"));
 
       try {
         logger.info({ cwd: mainCwd, branch, baseBranch, op: "merge" }, "[git] merging branch into base");
@@ -185,8 +185,8 @@ export async function gitMergeLocalAndPushBase(opts: {
           { timeout: 10_000 },
         ).catch(() => ({ stdout: "" }));
         const conflictFiles = conflictList.trim().split("\n").filter(Boolean);
-        await execFile("git", ["-C", mainCwd, "merge", "--abort"], { timeout: 10_000 }).catch(() => {});
-        await clearRemoteCredentials(mainCwd).catch(() => {});
+        await execFile("git", ["-C", mainCwd, "merge", "--abort"], { timeout: 10_000 }).catch((e) => logger.debug({ err: e instanceof Error ? e.message : String(e) }, "[git] cleanup op failed"));
+        await clearRemoteCredentials(mainCwd).catch((e) => logger.debug({ err: e instanceof Error ? e.message : String(e) }, "[git] cleanup op failed"));
         const msg = mergeErr instanceof Error ? mergeErr.message : String(mergeErr);
         logger.warn({ cwd: mainCwd, branch, baseBranch, conflictFiles, durationMs: Date.now() - start, op: "merge" }, "[git] merge conflicted");
         return { ok: false, conflicted: true, conflictFiles, warning: msg };
@@ -207,8 +207,8 @@ export async function gitMergeLocalAndPushBase(opts: {
           } catch (rebaseErr) {
             // Rebase or retry push failed — likely a real conflict
             const rebaseMsg = rebaseErr instanceof Error ? rebaseErr.message : String(rebaseErr);
-            await execFile("git", ["-C", mainCwd, "rebase", "--abort"], { timeout: 10_000 }).catch(() => {});
-            await clearRemoteCredentials(mainCwd).catch(() => {});
+            await execFile("git", ["-C", mainCwd, "rebase", "--abort"], { timeout: 10_000 }).catch((e) => logger.debug({ err: e instanceof Error ? e.message : String(e) }, "[git] cleanup op failed"));
+            await clearRemoteCredentials(mainCwd).catch((e) => logger.debug({ err: e instanceof Error ? e.message : String(e) }, "[git] cleanup op failed"));
             logger.warn({ cwd: mainCwd, branch, baseBranch, err: rebaseMsg, durationMs: Date.now() - start, op: "push-rebase" }, "[git] push failed after rebase — conflict needs resolution");
             return { ok: false, conflicted: true, conflictFiles: [], warning: `push rejected and rebase failed: ${rebaseMsg}` };
           }
@@ -216,14 +216,14 @@ export async function gitMergeLocalAndPushBase(opts: {
           throw pushErr;
         }
       }
-      await clearRemoteCredentials(mainCwd).catch(() => {});
+      await clearRemoteCredentials(mainCwd).catch((e) => logger.debug({ err: e instanceof Error ? e.message : String(e) }, "[git] cleanup op failed"));
       logger.info({ cwd: mainCwd, branch, baseBranch, durationMs: Date.now() - start, op: "merge+push" }, "[git] merge+push complete");
       return { ok: true, conflicted: false };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.warn({ cwd: mainCwd, branch, baseBranch, err: msg, durationMs: Date.now() - start, op: "merge+push" }, "[git] merge+push failed");
-      await execFile("git", ["-C", mainCwd, "merge", "--abort"], { timeout: 10_000 }).catch(() => {});
-      await clearRemoteCredentials(mainCwd).catch(() => {});
+      await execFile("git", ["-C", mainCwd, "merge", "--abort"], { timeout: 10_000 }).catch((e) => logger.debug({ err: e instanceof Error ? e.message : String(e) }, "[git] cleanup op failed"));
+      await clearRemoteCredentials(mainCwd).catch((e) => logger.debug({ err: e instanceof Error ? e.message : String(e) }, "[git] cleanup op failed"));
       return { ok: false, conflicted: false, warning: msg };
     }
   });
@@ -310,5 +310,7 @@ async function clearRemoteCredentials(cwd: string): Promise<void> {
       parsed.password = "";
       await execFile("git", ["-C", cwd, "remote", "set-url", "origin", parsed.toString()], { timeout: 10_000 });
     }
-  } catch { /* ignore */ }
+  } catch (err) {
+    logger.debug({ err: err instanceof Error ? err.message : String(err), cwd }, "[git] clearRemoteCredentials failed");
+  }
 }
