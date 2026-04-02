@@ -17,6 +17,12 @@ import { logger } from "../middleware/logger.js";
 
 const GITHUB_APP_SLUG = process.env.GITHUB_APP_SLUG ?? "agentsinc";
 
+/** Log at debug for missing tables (42P01), warn for real errors */
+function logDbFallback(err: unknown, ctx: Record<string, unknown>, msg: string) {
+  const level = (err as any)?.code === "42P01" ? "debug" : "warn";
+  logger[level]({ err, ...ctx }, msg);
+}
+
 export function githubRoutes(db: Db) {
   const router = Router();
   const github = githubAppService(db);
@@ -134,7 +140,7 @@ export function githubRoutes(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (row) companyName = row.name;
     } catch (err) {
-      logger.warn({ err, companyId, route: "default-repo-url" }, "[github] Failed to fetch company name");
+      logDbFallback(err, { companyId, route: "default-repo-url" }, "[github] Failed to fetch company name");
     }
 
     const repoName = github.deriveRepoName(companyId, projectName, projectId, companyName);
@@ -144,7 +150,7 @@ export function githubRoutes(db: Db) {
       const installation = await github.getInstallation(companyId);
       if (installation) account = installation.accountLogin;
     } catch (err) {
-      logger.warn({ err, companyId, route: "default-repo-url" }, "[github] Failed to fetch installation, using defaultOrg");
+      logDbFallback(err, { companyId, route: "default-repo-url" }, "[github] Failed to fetch installation, using defaultOrg");
     }
 
     res.json({ defaultRepoUrl: `https://github.com/${account}/${repoName}` });
@@ -200,7 +206,7 @@ export function githubRoutes(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (row) companyName = row.name;
     } catch (err) {
-      logger.warn({ err, companyId, route: "ensure-repo" }, "[github] Failed to fetch company name");
+      logDbFallback(err, { companyId, route: "ensure-repo" }, "[github] Failed to fetch company name");
     }
 
     const expectedRepoName = github.deriveRepoName(companyId, projectName, projectId, companyName);
@@ -210,7 +216,7 @@ export function githubRoutes(db: Db) {
       const installation = await github.getInstallation(companyId);
       if (installation) account = installation.accountLogin;
     } catch (err) {
-      logger.warn({ err, companyId, route: "ensure-repo" }, "[github] Failed to fetch installation, using defaultOrg");
+      logDbFallback(err, { companyId, route: "ensure-repo" }, "[github] Failed to fetch installation, using defaultOrg");
     }
 
     const expectedUrl = `https://github.com/${account}/${expectedRepoName}`;
