@@ -1109,6 +1109,32 @@ async function syncWorkspaceToS3(companyId: string, projectId: string, cwd: stri
   }
 }
 
+/**
+ * Tar an agent home directory and upload to S3/MinIO for cloud persistence.
+ * Preserves memory/life files across container restarts.
+ * Fire-and-forget — failures are logged but don't block the heartbeat.
+ */
+async function syncAgentHomeToS3(companyId: string, agentId: string, agentHomePath: string): Promise<void> {
+  const sync = getWorkspaceS3Sync();
+  if (!sync.enabled) return;
+
+  const { existsSync, statSync, readFileSync, unlinkSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { randomUUID } = await import("node:crypto");
+
+  if (!existsSync(agentHomePath) || !statSync(agentHomePath).isDirectory()) return;
+
+  const tarPath = path.join(tmpdir(), `agent-home-sync-${randomUUID().slice(0, 12)}.tar.gz`);
+  try {
+    const excludeArgs = TAR_EXCLUDES.flatMap((p) => ["--exclude", p]);
+    await execFile("tar", ["czf", tarPath, ...excludeArgs, "-C", agentHomePath, "."], { timeout: 60_000 });
+    const tarBuffer = readFileSync(tarPath);
+    await sync.saveAgentHomeSnapshot(companyId, agentId, tarBuffer);
+  } finally {
+    try { unlinkSync(tarPath); } catch { /* ignore */ }
+  }
+}
+
 export function heartbeatService(db: Db) {
   const instanceSettings = instanceSettingsService(db);
   const getCurrentUserRedactionOptions = async () => ({
@@ -1533,6 +1559,12 @@ export function heartbeatService(db: Db) {
 
       const fallbackCwd = resolveDefaultAgentWorkspaceDir(agent.id);
       await fs.mkdir(fallbackCwd, { recursive: true });
+      // Restore workspace snapshot from S3 if available
+      const wsSync = getWorkspaceS3Sync();
+      if (wsSync.enabled && resolvedProjectId) {
+        await wsSync.restoreSnapshot(agent.companyId, resolvedProjectId, fallbackCwd)
+          .catch((err) => { logger.warn({ err }, "workspace snapshot restore failed (non-fatal)"); });
+      }
       const warnings: string[] = [];
       if (preferredWorkspaceWarning) {
         warnings.push(preferredWorkspaceWarning);
@@ -2700,9 +2732,23 @@ export function heartbeatService(db: Db) {
       repoRef: executionWorkspace.repoRef,
       branchName: executionWorkspace.branchName,
       worktreePath: executionWorkspace.worktreePath,
+      // Agent home (workspaces/{agentId}/) is kept separate from instructions
+      // (companies/{companyId}/agents/{agentId}/instructions/) by design:
+      // - Instructions are server-managed, synced to S3 via instructions-s3-sync.ts
+      // - Memory/life files are agent-managed, synced to S3 via agent home snapshots
+      // - Different sync timing and ownership — see .plancraft/s3-file-restore/research.md
       agentHome: await (async () => {
         const home = resolveDefaultAgentWorkspaceDir(agent.id);
         await fs.mkdir(home, { recursive: true });
+        // Restore agent home snapshot from S3 if local dir is empty (e.g. fresh container)
+        const homeSync = getWorkspaceS3Sync();
+        if (homeSync.enabled) {
+          const entries = await fs.readdir(home).catch(() => []);
+          if (entries.length === 0) {
+            await homeSync.restoreAgentHomeSnapshot(agent.companyId, agent.id, home)
+              .catch((err) => { logger.warn({ err, agentId: agent.id }, "agent home snapshot restore failed (non-fatal)"); });
+          }
+        }
         return home;
       })(),
     };
@@ -3205,6 +3251,14 @@ export function heartbeatService(db: Db) {
       if (resolvedProjectId && executionWorkspace.cwd) {
         syncWorkspaceToS3(agent.companyId, resolvedProjectId, executionWorkspace.cwd).catch((syncErr) => {
           logger.warn({ err: syncErr, projectId: resolvedProjectId }, "workspace S3 sync failed (non-fatal)");
+        });
+      }
+
+      // Sync agent home (memory/life files) to S3 for persistence across container restarts
+      const agentHomePath = (context.paperclipWorkspace as Record<string, unknown> | undefined)?.agentHome;
+      if (typeof agentHomePath === "string" && agentHomePath) {
+        syncAgentHomeToS3(agent.companyId, agent.id, agentHomePath).catch((syncErr) => {
+          logger.warn({ err: syncErr, agentId: agent.id }, "agent home S3 sync failed (non-fatal)");
         });
       }
 
