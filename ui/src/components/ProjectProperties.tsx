@@ -257,6 +257,47 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
 
   const [useDefaultPending, setUseDefaultPending] = useState(false);
 
+  /**
+   * Check if workspace has files, prompt user to copy.
+   * Returns { shouldCopy, sourceDir } — caller is responsible for setting the repo URL
+   * BEFORE calling doCopy(), since the server reads the project's current repo URL.
+   */
+  const checkShouldCopyToRepo = async (newRepoUrl: string): Promise<{ shouldCopy: boolean; sourceDir: string | null }> => {
+    const sourceDir = codebase.effectiveLocalFolder ?? codebase.localFolder;
+    if (!sourceDir) return { shouldCopy: false, sourceDir: null };
+    if (codebase.repoUrl === newRepoUrl) return { shouldCopy: false, sourceDir };
+
+    try {
+      const { files } = await projectsApi.listWorkspaceFiles(project.id, selectedCompanyId ?? undefined);
+      if (files.length === 0) return { shouldCopy: false, sourceDir };
+    } catch (err) {
+      if ((err as any)?.status !== 404) {
+        console.warn("[checkShouldCopyToRepo] Failed to check local files:", err);
+      }
+      return { shouldCopy: false, sourceDir };
+    }
+
+    const confirmed = window.confirm(
+      `The local folder contains source files. Copy them to the new repo?\n\n${sourceDir}`,
+    );
+    return { shouldCopy: confirmed, sourceDir };
+  };
+
+  /** Execute the copy after repo URL has been set. */
+  const doCopyToRepo = async (sourceDir: string): Promise<void> => {
+    setCopyStatus("copying");
+    setCopyError(null);
+    try {
+      await projectsApi.copyToRepo(project.id, sourceDir, selectedCompanyId ?? undefined);
+      setCopyStatus("done");
+      invalidateProject();
+    } catch (err) {
+      setCopyStatus("error");
+      const msg = (err as any)?.body?.message ?? (err instanceof Error ? err.message : "Unknown error");
+      setCopyError(msg);
+    }
+  };
+
   const useDefaultRepo = async () => {
     if (!defaultRepoUrl || useDefaultPending) return;
     setUseDefaultPending(true);
@@ -265,30 +306,13 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     setWorkspaceError(null);
 
     try {
-      // 1. Check if existing local folder has source code BEFORE changing anything
-      const sourceDir = codebase.effectiveLocalFolder ?? codebase.localFolder;
-      let shouldCopyFiles = false;
-      if (sourceDir) {
-        try {
-          const { files } = await projectsApi.listWorkspaceFiles(project.id, selectedCompanyId ?? undefined);
-          if (files.length > 0) {
-            shouldCopyFiles = window.confirm(
-              `The local folder contains source files. Copy them to the new repo?\n\n${sourceDir}`,
-            );
-          }
-        } catch (err) {
-          // Only ignore 404 (no folder); surface other errors
-          if ((err as any)?.status !== 404) {
-            console.warn("[useDefaultRepo] Failed to check local files:", err);
-          }
-        }
-      }
+      // 1. Check files and prompt BEFORE changing anything
+      const { shouldCopy, sourceDir } = await checkShouldCopyToRepo(defaultRepoUrl);
 
       // 2. Create repo on GitHub if needed
       try {
         await githubApi.ensureRepo(selectedCompanyId!, project.name, project.id, defaultRepoUrl);
       } catch (err) {
-        // 422 = already exists, which is fine. Other errors should stop the flow.
         if ((err as any)?.status !== 422) {
           const msg = (err as any)?.body?.message ?? (err instanceof Error ? err.message : "Failed to create repo");
           setWorkspaceError(msg);
@@ -299,18 +323,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
       // 3. Set repo URL
       persistCodebase({ repoUrl: defaultRepoUrl });
 
-      // 4. Copy files from old folder to managed repo and push
-      if (shouldCopyFiles && sourceDir) {
-        setCopyStatus("copying");
-        try {
-          await projectsApi.copyToRepo(project.id, sourceDir, selectedCompanyId ?? undefined);
-          setCopyStatus("done");
-          invalidateProject();
-        } catch (err) {
-          setCopyStatus("error");
-          const msg = (err as any)?.body?.message ?? (err instanceof Error ? err.message : "Unknown error");
-          setCopyError(msg);
-        }
+      // 4. Copy files AFTER repo URL is set
+      if (shouldCopy && sourceDir) {
+        await doCopyToRepo(sourceDir);
       }
     } finally {
       setUseDefaultPending(false);
@@ -508,7 +523,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     persistCodebase({ cwd });
   };
 
-  const submitRepoWorkspace = () => {
+  const submitRepoWorkspace = async () => {
     const repoUrl = workspaceRepoUrl.trim();
     if (!repoUrl) {
       setWorkspaceError(null);
@@ -520,7 +535,17 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
       return;
     }
     setWorkspaceError(null);
+
+    // Check for files to copy BEFORE changing repo URL
+    const { shouldCopy, sourceDir } = await checkShouldCopyToRepo(repoUrl);
+
+    // Set the new repo URL
     persistCodebase({ repoUrl });
+
+    // Copy files if user confirmed
+    if (shouldCopy && sourceDir) {
+      await doCopyToRepo(sourceDir);
+    }
   };
 
   const clearLocalWorkspace = () => {
