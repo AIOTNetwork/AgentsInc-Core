@@ -761,6 +761,7 @@ export function projectRoutes(db: Db) {
     assertCompanyAccess(req, project.companyId);
 
     const sourceDir = typeof req.body?.sourceDir === "string" ? req.body.sourceDir : null;
+    const targetRepoUrl = typeof req.body?.repoUrl === "string" ? req.body.repoUrl : null;
     if (!sourceDir) {
       res.status(422).json({ error: "sourceDir is required" });
       return;
@@ -772,9 +773,10 @@ export function projectRoutes(db: Db) {
       return;
     }
 
-    const repoUrl = project.codebase.repoUrl;
+    // Use explicit target repo URL from request, fall back to project's current repo URL
+    const repoUrl = targetRepoUrl ?? project.codebase.repoUrl;
     if (!repoUrl) {
-      res.status(422).json({ error: "no_repo_url", message: "Project has no git repo URL" });
+      res.status(422).json({ error: "no_repo_url", message: "No repo URL provided and project has no git repo URL" });
       return;
     }
 

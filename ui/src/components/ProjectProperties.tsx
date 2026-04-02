@@ -283,12 +283,12 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     return { shouldCopy: confirmed, sourceDir };
   };
 
-  /** Execute the copy after repo URL has been set. */
-  const doCopyToRepo = async (sourceDir: string): Promise<void> => {
+  /** Execute the copy, passing the target repo URL explicitly. */
+  const doCopyToRepo = async (sourceDir: string, repoUrl: string): Promise<void> => {
     setCopyStatus("copying");
     setCopyError(null);
     try {
-      await projectsApi.copyToRepo(project.id, sourceDir, selectedCompanyId ?? undefined);
+      await projectsApi.copyToRepo(project.id, sourceDir, repoUrl, selectedCompanyId ?? undefined);
       setCopyStatus("done");
       invalidateProject();
     } catch (err) {
@@ -323,9 +323,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
       // 3. Set repo URL
       persistCodebase({ repoUrl: defaultRepoUrl });
 
-      // 4. Copy files AFTER repo URL is set
+      // 4. Copy files — pass target URL explicitly (DB may not have updated yet)
       if (shouldCopy && sourceDir) {
-        await doCopyToRepo(sourceDir);
+        await doCopyToRepo(sourceDir, defaultRepoUrl);
       }
     } finally {
       setUseDefaultPending(false);
@@ -542,9 +542,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     // Set the new repo URL
     persistCodebase({ repoUrl });
 
-    // Copy files if user confirmed
+    // Copy files if user confirmed — pass target URL explicitly
     if (shouldCopy && sourceDir) {
-      await doCopyToRepo(sourceDir);
+      await doCopyToRepo(sourceDir, repoUrl);
     }
   };
 
