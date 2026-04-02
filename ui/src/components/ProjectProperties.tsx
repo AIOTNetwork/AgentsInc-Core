@@ -226,6 +226,8 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
   const [workspaceCwd, setWorkspaceCwd] = useState("");
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState("");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copying" | "done" | "error">("idle");
+  const [copyError, setCopyError] = useState<string | null>(null);
 
   const commitField = (field: ProjectConfigFieldKey, data: Record<string, unknown>) => {
     if (onFieldUpdate) {
@@ -251,10 +253,6 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
 
   const ensureRepo = useMutation({
     mutationFn: () => githubApi.ensureRepo(selectedCompanyId!, project.name, project.id, defaultRepoUrl),
-  });
-
-  const copyToRepo = useMutation({
-    mutationFn: (sourceDir: string) => projectsApi.copyToRepo(project.id, sourceDir, selectedCompanyId ?? undefined),
   });
 
   const useDefaultRepo = async () => {
@@ -283,12 +281,22 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
       // 422 = already exists, which is fine
     }
 
-    // 3. Set the repo URL on the workspace
+    // 3. Set repo URL
     persistCodebase({ repoUrl: defaultRepoUrl });
 
     // 4. Copy files from old folder to managed repo and push
     if (shouldCopyFiles && sourceDir) {
-      copyToRepo.mutate(sourceDir);
+      setCopyStatus("copying");
+      setCopyError(null);
+      try {
+        await projectsApi.copyToRepo(project.id, sourceDir, selectedCompanyId ?? undefined);
+        setCopyStatus("done");
+        invalidateProject();
+      } catch (err) {
+        setCopyStatus("error");
+        const msg = (err as any)?.body?.message ?? (err instanceof Error ? err.message : "Unknown error");
+        setCopyError(msg);
+      }
     }
   };
 
@@ -968,15 +976,15 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               Failed to create repo: {(ensureRepo.error as any)?.body?.message ?? (ensureRepo.error instanceof Error ? ensureRepo.error.message : "Unknown error")}
             </p>
           )}
-          {copyToRepo.isPending && (
+          {copyStatus === "copying" && (
             <p className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Loader2 className="h-3 w-3 animate-spin" />
               Copying files to repo...
             </p>
           )}
-          {copyToRepo.isError && (
+          {copyStatus === "error" && (
             <p className="text-xs text-destructive">
-              Failed to copy files: {(copyToRepo.error as any)?.body?.message ?? (copyToRepo.error instanceof Error ? copyToRepo.error.message : "Unknown error")}
+              Failed to copy files: {copyError}
             </p>
           )}
         </div>
