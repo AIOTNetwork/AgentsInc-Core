@@ -262,10 +262,12 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
    * Returns { shouldCopy, sourceDir } — caller is responsible for setting the repo URL
    * BEFORE calling doCopy(), since the server reads the project's current repo URL.
    */
-  const checkShouldCopyToRepo = async (newRepoUrl: string): Promise<{ shouldCopy: boolean; sourceDir: string | null }> => {
+  const checkShouldCopyToRepo = async (newRepoUrl: string, isManagedRepo = false): Promise<{ shouldCopy: boolean; sourceDir: string | null }> => {
     const sourceDir = codebase.effectiveLocalFolder ?? codebase.localFolder;
     if (!sourceDir) return { shouldCopy: false, sourceDir: null };
     if (codebase.repoUrl === newRepoUrl) return { shouldCopy: false, sourceDir };
+    // Only offer copy for managed repos (GitHub App has push access)
+    if (!isManagedRepo) return { shouldCopy: false, sourceDir };
 
     try {
       const { files } = await projectsApi.listWorkspaceFiles(project.id, selectedCompanyId ?? undefined);
@@ -307,7 +309,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
 
     try {
       // 1. Check files and prompt BEFORE changing anything
-      const { shouldCopy, sourceDir } = await checkShouldCopyToRepo(defaultRepoUrl);
+      const { shouldCopy, sourceDir } = await checkShouldCopyToRepo(defaultRepoUrl, true);
 
       // 2. Create repo on GitHub if needed
       try {
@@ -537,7 +539,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     setWorkspaceError(null);
 
     // Check for files to copy BEFORE changing repo URL
-    const { shouldCopy, sourceDir } = await checkShouldCopyToRepo(repoUrl);
+    // Only offer copy for the default managed repo (GitHub App has push access)
+    const isManaged = repoUrl === defaultRepoUrl;
+    const { shouldCopy, sourceDir } = await checkShouldCopyToRepo(repoUrl, isManaged);
 
     // Set the new repo URL
     persistCodebase({ repoUrl });
