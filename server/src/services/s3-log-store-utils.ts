@@ -117,7 +117,7 @@ export function createS3LogClient(config: S3LogStoreConfig): S3LogClient {
       const start = Math.max(0, Math.min(offset, totalSize));
       const end = Math.max(start, Math.min(start + limitBytes - 1, totalSize - 1));
 
-      if (start > end || totalSize === 0) {
+      if (start >= totalSize || totalSize === 0) {
         return { content: "", nextOffset: start };
       }
 
