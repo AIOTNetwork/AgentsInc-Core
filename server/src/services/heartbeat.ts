@@ -227,13 +227,9 @@ async function ensureManagedProjectWorkspace(
   }
 
   if (stats) {
-    const entries = await fs.readdir(cwd).catch(() => []);
-    if (entries.length > 0) {
-      return {
-        cwd,
-        warning: `Managed workspace path "${cwd}" already exists but is not a git checkout. Using it as-is.`,
-      };
-    }
+    // Directory exists but no .git (e.g. S3 restore excludes .git).
+    // Safe to remove: agents commit+push (git add -A) after every run,
+    // so all workspace files are in the remote — nothing untracked to preserve.
     await fs.rm(cwd, { recursive: true, force: true });
   }
 
