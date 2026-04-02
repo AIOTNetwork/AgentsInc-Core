@@ -778,39 +778,61 @@ export function projectRoutes(db: Db) {
       return;
     }
 
-    // Ensure the managed folder exists with a git clone
-    const managedDir = await ensureWorkspaceCloned(project);
-    if (!managedDir) {
-      res.status(500).json({ error: "workspace_setup_failed", message: "Could not set up managed workspace" });
-      return;
-    }
+    // Compute the managed folder from the new repo URL (not the old effectiveLocalFolder)
+    const { resolveManagedProjectWorkspaceDir } = await import("../home-paths.js");
+    const repoName = repoUrl.split("/").pop()?.replace(/\.git$/i, "") ?? null;
+    const managedDir = resolveManagedProjectWorkspaceDir({
+      companyId: project.companyId,
+      projectId: project.id,
+      repoName,
+    });
 
-    // Copy files from source to managed folder (excluding .git, node_modules)
-    const COPY_EXCLUDES = new Set([".git", "node_modules", ".next", ".nuxt", "dist", "build", ".cache", "__pycache__"]);
-
-    async function copyDir(src: string, dest: string): Promise<void> {
-      await fsPromises.mkdir(dest, { recursive: true });
-      const entries = await fsPromises.readdir(src, { withFileTypes: true });
-      for (const entry of entries) {
-        if (COPY_EXCLUDES.has(entry.name)) continue;
-        const srcPath = path.join(src, entry.name);
-        const destPath = path.join(dest, entry.name);
-        if (entry.isDirectory()) {
-          await copyDir(srcPath, destPath);
-        } else if (entry.isFile() || entry.isSymbolicLink()) {
-          await fsPromises.copyFile(srcPath, destPath);
+    // Ensure the managed dir has a git repo (clone or init if needed)
+    if (path.resolve(sourceDir) !== path.resolve(managedDir)) {
+      const gitDirExists = fsSync.existsSync(path.join(managedDir, ".git"));
+      if (!gitDirExists) {
+        await fsPromises.mkdir(managedDir, { recursive: true });
+        const credUrl = await getCredentialUrl(project.companyId, repoUrl);
+        const cloneResult = await gitClone(credUrl, managedDir, repoUrl);
+        if (!cloneResult.ok) {
+          // Empty repo — init instead
+          const { execFile: execFileCb } = await import("node:child_process");
+          const { promisify } = await import("node:util");
+          const execFileAsync = promisify(execFileCb);
+          await execFileAsync("git", ["-C", managedDir, "init"], { timeout: 10_000 });
+          await execFileAsync("git", ["-C", managedDir, "remote", "add", "origin", repoUrl], { timeout: 10_000 });
         }
       }
     }
 
-    try {
-      await copyDir(sourceDir, managedDir);
-      logger.info({ sourceDir, managedDir, projectId: project.id }, "[workspace] copied files to managed repo");
-    } catch (copyErr) {
-      const msg = copyErr instanceof Error ? copyErr.message : String(copyErr);
-      logger.error({ err: msg, sourceDir, managedDir, projectId: project.id }, "[workspace] file copy failed");
-      res.status(500).json({ error: "copy_failed", message: msg });
-      return;
+    // Copy files from source to managed folder (excluding .git, node_modules)
+    if (path.resolve(sourceDir) !== path.resolve(managedDir)) {
+      const COPY_EXCLUDES = new Set([".git", "node_modules", ".next", ".nuxt", "dist", "build", ".cache", "__pycache__"]);
+
+      async function copyDir(src: string, dest: string): Promise<void> {
+        await fsPromises.mkdir(dest, { recursive: true });
+        const entries = await fsPromises.readdir(src, { withFileTypes: true });
+        for (const entry of entries) {
+          if (COPY_EXCLUDES.has(entry.name)) continue;
+          const srcPath = path.join(src, entry.name);
+          const destPath = path.join(dest, entry.name);
+          if (entry.isDirectory()) {
+            await copyDir(srcPath, destPath);
+          } else if (entry.isFile() || entry.isSymbolicLink()) {
+            await fsPromises.copyFile(srcPath, destPath);
+          }
+        }
+      }
+
+      try {
+        await copyDir(sourceDir, managedDir);
+        logger.info({ sourceDir, managedDir, projectId: project.id }, "[workspace] copied files to managed repo");
+      } catch (copyErr) {
+        const msg = copyErr instanceof Error ? copyErr.message : String(copyErr);
+        logger.error({ err: msg, sourceDir, managedDir, projectId: project.id }, "[workspace] file copy failed");
+        res.status(500).json({ error: "copy_failed", message: msg });
+        return;
+      }
     }
 
     // Commit and push
@@ -823,9 +845,9 @@ export function projectRoutes(db: Db) {
     }
 
     // For fresh repos (no remote branch yet), push directly instead of merge
-    const { execFile: execFileCb } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execFileAsync = promisify(execFileCb);
+    const { execFile: execFileCb2 } = await import("node:child_process");
+    const { promisify: promisify2 } = await import("node:util");
+    const execFileAsync = promisify2(execFileCb2);
 
     let pushResult: GitMergeResult;
     try {
