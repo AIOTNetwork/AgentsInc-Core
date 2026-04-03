@@ -184,6 +184,9 @@ export function buildExecutionWorkspaceAdapterConfig(input: {
   );
   const hasWorkspaceControl = projectHasPolicy || issueHasWorkspaceOverrides || input.legacyUseProjectWorkspace === false;
 
+  // Always strip legacy agent-level cwd — project workspaces manage the working directory
+  delete nextConfig.cwd;
+
   if (hasWorkspaceControl) {
     if (input.mode === "isolated_workspace") {
       const strategy =
