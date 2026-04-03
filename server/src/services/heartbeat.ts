@@ -1586,6 +1586,32 @@ export function heartbeatService(db: Db) {
         await wsSync.restoreSnapshot(agent.companyId, resolvedProjectId, fallbackCwd)
           .catch((err) => { logger.warn({ err }, "workspace snapshot restore failed (non-fatal)"); });
       }
+      // Ensure fallback is a git repo if a project repo URL exists
+      const fallbackRepoUrl = projectWorkspaceRows[0]?.repoUrl ?? null;
+      const fallbackGitExists = await fs.stat(path.resolve(fallbackCwd, ".git")).then((s) => s.isDirectory()).catch(() => false);
+      if (!fallbackGitExists && fallbackRepoUrl) {
+        try {
+          const github = githubAppService(db);
+          const credUrl = await github.getCredentialUrl(agent.companyId, fallbackRepoUrl);
+          await gitFetchAndReset(fallbackCwd, credUrl, "main").catch(() => {});
+          // If fetch+reset failed (no .git at all), clone instead
+          const stillNoGit = !(await fs.stat(path.resolve(fallbackCwd, ".git")).then((s) => s.isDirectory()).catch(() => false));
+          if (stillNoGit) {
+            // Remove and re-clone
+            await fs.rm(fallbackCwd, { recursive: true, force: true });
+            await gitClone(credUrl, fallbackCwd, fallbackRepoUrl);
+          }
+        } catch (gitErr) {
+          logger.warn({ err: gitErr, cwd: fallbackCwd, repoUrl: fallbackRepoUrl }, "fallback workspace git setup failed (non-fatal)");
+        }
+      } else if (!fallbackGitExists) {
+        // No repo URL — init a bare git repo so the adapter doesn't crash
+        try {
+          await execFile("git", ["-C", fallbackCwd, "init"], { timeout: 10_000 });
+        } catch {
+          // best effort
+        }
+      }
       const warnings: string[] = [];
       if (preferredWorkspaceWarning) {
         warnings.push(preferredWorkspaceWarning);
