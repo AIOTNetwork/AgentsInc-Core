@@ -295,14 +295,17 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       entityId: company.id,
       details: { name: company.name },
     });
-    // Auto-import preview skill from tools server
+    // Auto-import skills from tools server
     const toolsUrl = process.env.AGENTSINC_TOOLS_URL;
     if (toolsUrl) {
-      try {
-        const skills = companySkillService(db);
-        await skills.importFromSource(company.id, `${toolsUrl}/tools/preview/skill`);
-      } catch (err) {
-        logger.warn({ err, companyId: company.id }, "auto-import preview skill failed");
+      const skills = companySkillService(db);
+      const toolSkills = ["preview", "harness-design"];
+      for (const tool of toolSkills) {
+        try {
+          await skills.importFromSource(company.id, `${toolsUrl}/tools/${tool}/skill`);
+        } catch (err) {
+          logger.warn({ err, companyId: company.id, tool }, `auto-import ${tool} skill failed`);
+        }
       }
     }
 
