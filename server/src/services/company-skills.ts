@@ -85,6 +85,8 @@ type SkillSourceMeta = {
   workspaceId?: string;
   workspaceName?: string;
   workspaceCwd?: string;
+  /** Bundled file contents persisted for K8s ephemeral storage resilience */
+  bundledFiles?: Record<string, string>;
 };
 
 export type LocalSkillInventoryMode = "full" | "project_root";
@@ -1721,12 +1723,28 @@ export function companySkillService(db: Db) {
 
     if (skill.sourceType === "local_path" || skill.sourceType === "catalog") {
       const absolutePath = resolveLocalSkillFilePath(skill, normalizedPath);
+      let readFromDisk = false;
       if (absolutePath) {
-        content = await fs.readFile(absolutePath, "utf8");
-      } else if (normalizedPath === "SKILL.md") {
-        content = skill.markdown;
-      } else {
-        throw notFound("Skill file not found");
+        try {
+          content = await fs.readFile(absolutePath, "utf8");
+          readFromDisk = true;
+        } catch {
+          // Disk file missing (e.g. K8s pod restart) — fall through to DB fallback
+        }
+      }
+      if (!readFromDisk) {
+        if (normalizedPath === "SKILL.md") {
+          content = skill.markdown;
+        } else {
+          // Try bundled files stored in metadata (survives pod restarts)
+          const meta = getSkillMeta(skill);
+          const bundled = isPlainRecord(meta.bundledFiles) ? meta.bundledFiles as Record<string, string> : null;
+          if (bundled && typeof bundled[normalizedPath] === "string") {
+            content = bundled[normalizedPath];
+          } else {
+            throw notFound("Skill file not found");
+          }
+        }
       }
     } else if (skill.sourceType === "github" || skill.sourceType === "skills_sh") {
       const metadata = getSkillMeta(skill);
@@ -1832,9 +1850,13 @@ export function companySkillService(db: Db) {
         })
         .where(eq(companySkills.id, skill.id));
     } else {
+      // Persist edited file content in metadata.bundledFiles so it survives K8s pod restart
+      const meta = getSkillMeta(skill);
+      const bundled = meta.bundledFiles ?? {};
+      bundled[normalizedPath] = content;
       await db
         .update(companySkills)
-        .set({ updatedAt: new Date() })
+        .set({ metadata: { ...meta, bundledFiles: bundled }, updatedAt: new Date() })
         .where(eq(companySkills.id, skill.id));
     }
 
@@ -2341,7 +2363,7 @@ export function companySkillService(db: Db) {
     }
     const imported = await upsertImportedSkills(companyId, filteredSkills);
 
-    // Write bundled reference files to disk for URL-imported skills
+    // Write bundled reference files to disk and persist in DB metadata for K8s resilience
     for (const skill of filteredSkills) {
       const bundled = (skill as ImportedSkill & { bundledFiles?: Record<string, string> }).bundledFiles;
       if (!bundled) continue;
@@ -2354,10 +2376,16 @@ export function companySkillService(db: Db) {
         await fs.mkdir(path.dirname(targetPath), { recursive: true });
         await fs.writeFile(targetPath, content, "utf8");
       }
-      // Update sourceLocator to point to the local materialized dir so readFile works
+      // Store bundled files in metadata so they can be re-materialized after pod restart
+      const existingMeta = getSkillMeta(persisted);
       await db
         .update(companySkills)
-        .set({ sourceType: "local_path", sourceLocator: skillDir, updatedAt: new Date() })
+        .set({
+          sourceType: "local_path",
+          sourceLocator: skillDir,
+          metadata: { ...existingMeta, bundledFiles: bundled },
+          updatedAt: new Date(),
+        })
         .where(eq(companySkills.id, persisted.id));
     }
 
