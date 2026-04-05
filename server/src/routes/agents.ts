@@ -1353,11 +1353,15 @@ export function agentRoutes(db: Db) {
     const sourceIssueIds = parseSourceIssueIds(req.body);
     const {
       desiredSkills: requestedDesiredSkills,
+      catalogPath: requestedCatalogPath,
       sourceIssueId: _sourceIssueId,
       sourceIssueIds: _sourceIssueIds,
       ...hireInput
     } = req.body;
     hireInput.adapterType = assertKnownAdapterType(hireInput.adapterType);
+    if (requestedCatalogPath) {
+      hireInput.adapterConfig = { ...(hireInput.adapterConfig as Record<string, unknown> ?? {}), catalogPath: requestedCatalogPath };
+    }
     const requestedAdapterConfig = applyCreateDefaultsByAdapterType(
       hireInput.adapterType,
       ((hireInput.adapterConfig ?? {}) as Record<string, unknown>),

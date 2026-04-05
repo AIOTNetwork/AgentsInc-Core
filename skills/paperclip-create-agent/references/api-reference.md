@@ -39,11 +39,11 @@ Request body matches agent create shape:
   "reportsTo": "uuid-or-null",
   "capabilities": "Owns architecture and engineering execution",
   "desiredSkills": ["vercel-labs/agent-browser/agent-browser"],
+  "catalogPath": "aiot-agents/leadership/leadership-cto",
   "adapterType": "claude_local",
   "adapterConfig": {
     "cwd": "/absolute/path",
-    "model": "claude-sonnet-4-5-20250929",
-    "promptTemplate": "You are CTO..."
+    "model": "claude-sonnet-4-5-20250929"
   },
   "runtimeConfig": {
     "heartbeat": {

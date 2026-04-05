@@ -28,35 +28,7 @@ curl -sS "$PAPERCLIP_API_URL/api/agents/me" \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY"
 ```
 
-2. Discover available adapter configuration docs for this Paperclip instance.
-
-```sh
-curl -sS "$PAPERCLIP_API_URL/llms/agent-configuration.txt" \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY"
-```
-
-3. Read adapter-specific docs (example: `claude_local`).
-
-```sh
-curl -sS "$PAPERCLIP_API_URL/llms/agent-configuration/claude_local.txt" \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY"
-```
-
-4. Compare existing agent configurations in your company.
-
-```sh
-curl -sS "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agent-configurations" \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY"
-```
-
-5. Discover allowed agent icons and pick one that matches the role.
-
-```sh
-curl -sS "$PAPERCLIP_API_URL/llms/agent-icons.txt" \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY"
-```
-
-6. Browse the agent template catalog and pick the best template for this role.
+2. Browse the agent template catalog and pick the best template for this role.
 
 ```sh
 # List all available templates
@@ -70,7 +42,7 @@ curl -sS "$PAPERCLIP_API_URL/api/agency/catalog?category=engineering" \
 
 Each entry has: `name`, `description`, `category`, `defaultRole`, `bundlePath`, `desiredSkills`.
 
-Review the list and pick the template whose description best matches the role you're hiring for. Use the `bundlePath` value as `catalogPath` in the hire request (step 8).
+Review the list and pick the template whose description best matches the role you're hiring for. Use the `bundlePath` value as `catalogPath` in the hire request (step 9).
 
 If no template is a good fit, you may omit `catalogPath` and provide a custom `promptTemplate` instead.
 
@@ -81,20 +53,52 @@ curl -sS "$PAPERCLIP_API_URL/api/agency/agents?path=<bundlePath>&parsed=true" \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY"
 ```
 
+3. Discover available adapter configuration docs for this Paperclip instance.
+
+```sh
+curl -sS "$PAPERCLIP_API_URL/llms/agent-configuration.txt" \
+  -H "Authorization: Bearer $PAPERCLIP_API_KEY"
+```
+
+4. Read adapter-specific docs (example: `claude_local`).
+
+```sh
+curl -sS "$PAPERCLIP_API_URL/llms/agent-configuration/claude_local.txt" \
+  -H "Authorization: Bearer $PAPERCLIP_API_KEY"
+```
+
+5. Compare existing agent configurations in your company.
+
+```sh
+curl -sS "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agent-configurations" \
+  -H "Authorization: Bearer $PAPERCLIP_API_KEY"
+```
+
+6. Discover allowed agent icons and pick one that matches the role.
+
+```sh
+curl -sS "$PAPERCLIP_API_URL/llms/agent-icons.txt" \
+  -H "Authorization: Bearer $PAPERCLIP_API_KEY"
+```
+
 7. Draft the new hire config:
 - role/title/name
 - icon (required in practice; use one from `/llms/agent-icons.txt`)
 - reporting line (`reportsTo`)
 - adapter type
-- `catalogPath` — the `bundlePath` of the template you picked in step 6 (this loads the template's AGENTS.md, SOUL.md, HEARTBEAT.md as the agent's instructions)
+- `catalogPath` — the `bundlePath` of the template you picked in step 2 (this loads the template's AGENTS.md, SOUL.md, HEARTBEAT.md as the agent's instructions)
 - optional `desiredSkills` from the company skill library when this role needs installed skills on day one (the template may also specify desiredSkills automatically)
 - adapter and runtime config aligned to this environment
 - capabilities
 - source issue linkage (`sourceIssueId` or `sourceIssueIds`) when this hire came from an issue
 
-If you chose a template in step 6, do NOT set `promptTemplate` — the template files will be used instead.
+If you chose a template in step 2, do NOT set `promptTemplate` — the template files will be used instead.
 
-8. Submit hire request.
+8. Pre-submit checklist:
+   - Confirm: Did you browse `/api/agency/catalog`?
+   - If a template matched, is `catalogPath` set in the request body?
+
+9. Submit hire request.
 
 ```sh
 curl -sS -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agent-hires" \
@@ -108,18 +112,18 @@ curl -sS -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agent-h
     "reportsTo": "<ceo-agent-id>",
     "capabilities": "Owns technical roadmap, architecture, staffing, execution",
     "desiredSkills": ["vercel-labs/agent-browser/agent-browser"],
+    "catalogPath": "aiot-agents/leadership/leadership-cto",
     "adapterType": "codex_local",
     "adapterConfig": {
       "cwd": "/abs/path/to/repo",
-      "model": "o4-mini",
-      "catalogPath": "aiot-agents/leadership/leadership-cto"
+      "model": "o4-mini"
     },
     "runtimeConfig": {"heartbeat": {"enabled": true, "intervalSec": 300, "wakeOnDemand": true}},
     "sourceIssueId": "<issue-id>"
   }'
 ```
 
-9. Handle governance state:
+10. Handle governance state:
 - if response has `approval`, hire is `pending_approval`
 - monitor and discuss on approval thread
 - when the board approves, you will be woken with `PAPERCLIP_APPROVAL_ID`; read linked issues and close/comment follow-up
@@ -158,6 +162,8 @@ For each linked issue, either:
 - comment in markdown with links to the approval and next actions.
 
 ## Quality Bar
+
+**Always browse `GET /api/agency/catalog` before hiring. If a matching template exists, you MUST use its `bundlePath` as `catalogPath`. Only omit `catalogPath` if no template is relevant after reviewing the full catalog.**
 
 Before sending a hire request:
 
