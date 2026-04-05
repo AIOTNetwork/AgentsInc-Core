@@ -261,7 +261,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     res.json(result);
   });
 
-  const MAX_COMPANIES_PER_USER = 3;
+  const MAX_COMPANIES_PER_USER = 5;
 
   router.post("/", validate(createCompanySchema), async (req, res) => {
     assertBoard(req);
