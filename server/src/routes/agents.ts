@@ -1366,11 +1366,20 @@ export function agentRoutes(db: Db) {
       hireInput.adapterType,
       ((hireInput.adapterConfig ?? {}) as Record<string, unknown>),
     );
+    // Auto-include all installed company skills for hired agents
+    let effectiveHireSkills = Array.isArray(requestedDesiredSkills) ? requestedDesiredSkills : undefined;
+    {
+      const allSkills = await companySkills.list(companyId);
+      const installed = allSkills.map((s) => s.slug);
+      if (installed.length > 0) {
+        effectiveHireSkills = [...new Set([...(effectiveHireSkills ?? []), ...installed])];
+      }
+    }
     const desiredSkillAssignment = await resolveDesiredSkillAssignment(
       companyId,
       hireInput.adapterType,
       requestedAdapterConfig,
-      Array.isArray(requestedDesiredSkills) ? requestedDesiredSkills : undefined,
+      effectiveHireSkills,
     );
     const normalizedAdapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
       companyId,
@@ -1535,12 +1544,13 @@ export function agentRoutes(db: Db) {
       createInput.adapterType,
       ((createInput.adapterConfig ?? {}) as Record<string, unknown>),
     );
-    // Auto-include the preview skill for all new agents (if installed in company)
+    // Auto-include all installed company skills for new agents
     let effectiveDesiredSkills = Array.isArray(requestedDesiredSkills) ? requestedDesiredSkills : undefined;
     {
       const allSkills = await companySkills.list(companyId);
-      if (allSkills.some((s) => s.slug === "agentsinc-preview")) {
-        effectiveDesiredSkills = [...new Set([...(effectiveDesiredSkills ?? []), "agentsinc-preview"])];
+      const installed = allSkills.map((s) => s.slug);
+      if (installed.length > 0) {
+        effectiveDesiredSkills = [...new Set([...(effectiveDesiredSkills ?? []), ...installed])];
       }
     }
     const desiredSkillAssignment = await resolveDesiredSkillAssignment(
