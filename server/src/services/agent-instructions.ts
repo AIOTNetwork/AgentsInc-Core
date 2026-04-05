@@ -764,14 +764,20 @@ export function agentInstructionsService(options?: { s3Sync?: InstructionsS3Sync
       await fs.writeFile(resolvePathWithinRoot(rootPath, entryFile), "", "utf8");
     }
 
-    // Sync all materialized files to S3
+    // Sync materialized files to S3
     if (s3Sync?.enabled) {
-      const s3Files: Record<string, string> = {};
-      for (const [relativePath, content] of normalizedEntries) {
-        s3Files[relativePath] = content;
+      if (options?.replaceExisting) {
+        // Full disk-state sync after destructive replace — ensures S3 matches local exactly
+        await s3Sync.saveToS3(agent.companyId, agent.id, rootPath);
+      } else {
+        // Merge-sync: preserves files already in S3 that aren't in this materialization
+        const s3Files: Record<string, string> = {};
+        for (const [relativePath, content] of normalizedEntries) {
+          s3Files[relativePath] = content;
+        }
+        if (!s3Files[entryFile]) s3Files[entryFile] = "";
+        await s3Sync.saveFilesToS3(agent.companyId, agent.id, s3Files);
       }
-      if (!s3Files[entryFile]) s3Files[entryFile] = "";
-      await s3Sync.saveFilesToS3(agent.companyId, agent.id, s3Files);
     }
 
     const adapterConfig = applyBundleConfig(asRecord(agent.adapterConfig), {

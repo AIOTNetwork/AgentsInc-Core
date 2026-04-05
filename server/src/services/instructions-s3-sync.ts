@@ -85,8 +85,11 @@ export function createInstructionsS3Sync(provider: StorageProvider | null): Inst
   async function saveFilesToS3(companyId: string, agentId: string, files: Record<string, string>): Promise<void> {
     if (!enabled) return;
     try {
-      await writeBundle(companyId, agentId, files);
-      logger.info({ companyId, agentId, fileCount: Object.keys(files).length }, "Saved instruction files to S3");
+      // Merge with existing bundle to preserve files not in the new set
+      const existing = await readBundle(companyId, agentId) ?? {};
+      const merged = { ...existing, ...files };
+      await writeBundle(companyId, agentId, merged);
+      logger.info({ companyId, agentId, newCount: Object.keys(files).length, totalCount: Object.keys(merged).length }, "Saved instruction files to S3 (merged)");
     } catch (err) {
       logger.warn({ err, companyId, agentId }, "Failed to save instruction files to S3");
     }
@@ -123,17 +126,24 @@ export function createInstructionsS3Sync(provider: StorageProvider | null): Inst
       if (!bundle || Object.keys(bundle).length === 0) return false;
 
       await fs.mkdir(localRootPath, { recursive: true });
+      let restoredCount = 0;
       for (const [relativePath, content] of Object.entries(bundle)) {
         const absolutePath = path.resolve(localRootPath, relativePath);
+        // Skip files that already exist locally — they may contain user edits
+        const existingStat = await fs.stat(absolutePath).catch(() => null);
+        if (existingStat?.isFile()) continue;
         await fs.mkdir(path.dirname(absolutePath), { recursive: true });
         await fs.writeFile(absolutePath, content, "utf-8");
+        restoredCount++;
       }
 
-      logger.info(
-        { companyId, agentId, fileCount: Object.keys(bundle).length },
-        "Restored instruction files from S3",
-      );
-      return true;
+      if (restoredCount > 0) {
+        logger.info(
+          { companyId, agentId, restoredCount, totalInBundle: Object.keys(bundle).length },
+          "Restored missing instruction files from S3 (skipped existing)",
+        );
+      }
+      return restoredCount > 0;
     } catch (err) {
       logger.warn({ err, companyId, agentId }, "Failed to restore instruction files from S3");
       return false;
