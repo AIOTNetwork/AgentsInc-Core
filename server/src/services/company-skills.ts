@@ -990,7 +990,11 @@ async function readUrlSkillImports(
     const h = parsed.hostname.toLowerCase();
     if (h.endsWith(".githubusercontent.com") || h === "gist.github.com") return false;
     const segments = parsed.pathname.split("/").filter(Boolean);
-    return segments.length >= 2 && !parsed.pathname.endsWith(".md");
+    if (segments.length < 2 || parsed.pathname.endsWith(".md")) return false;
+    // Only match GitHub.com or hosts with git-related path patterns (tree/blob = GitHub/Gitea)
+    const isGitHub = h === "github.com" || h === "www.github.com";
+    const hasGitPathPattern = segments.includes("tree") || segments.includes("blob");
+    return isGitHub || hasGitPathPattern;
   } catch { return false; } })();
   if (looksLikeRepoUrl) {
     const parsed = parseGitHubSourceUrl(url);
