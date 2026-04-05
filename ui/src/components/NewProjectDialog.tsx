@@ -144,6 +144,10 @@ export function NewProjectDialog() {
   }
 
   const isAbsolutePath = (value: string) => value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
+  const looksLikeRepoUrl = (value: string) => {
+    try { const u = new URL(value); return u.protocol === "https:" && u.pathname.split("/").filter(Boolean).length >= 2; }
+    catch { return false; }
+  };
 
   const deriveWorkspaceNameFromPath = (value: string) => {
     const normalized = value.trim().replace(/[\\/]+$/, "");
