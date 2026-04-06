@@ -35,6 +35,7 @@ import {
   routineService,
 } from "./services/index.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
+import { seedPlans } from "./services/plan-seed.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { ensureS3BucketExists } from "./services/s3-log-store-utils.js";
 import { setInstanceAdminEmails, setDemoEmails } from "./instance-admin-emails.js";
@@ -681,6 +682,8 @@ export async function startServer(): Promise<StartedServer> {
   // reject valid external adapter types during the startup loading window.
   const { waitForExternalAdapters } = await import("./adapters/registry.js");
   await waitForExternalAdapters();
+
+  await seedPlans(db as any);
 
   await new Promise<void>((resolveListen, rejectListen) => {
     const onError = (err: Error) => {

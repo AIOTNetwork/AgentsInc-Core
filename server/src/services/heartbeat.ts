@@ -10,6 +10,7 @@ import {
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
+  companyMemberships,
   heartbeatRunEvents,
   heartbeatRuns,
   issueComments,
@@ -56,6 +57,8 @@ import {
   resolveExecutionWorkspaceMode,
 } from "./execution-workspace-policy.js";
 import { instanceSettingsService } from "./instance-settings.js";
+import { tokenUsageService } from "./token-usage.js";
+import { logActivity } from "./activity-log.js";
 import { redactCurrentUserText, redactCurrentUserValue } from "../log-redaction.js";
 import { getWorkspaceS3Sync, TAR_EXCLUDES } from "./workspace-snapshot.js";
 import { githubAppService } from "./github-app.js";
@@ -89,6 +92,21 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
   "opencode_local",
   "pi_local",
 ]);
+
+async function resolveCompanyOwnerUserId(db: Db, companyId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ userId: companyMemberships.principalId })
+    .from(companyMemberships)
+    .where(
+      and(
+        eq(companyMemberships.companyId, companyId),
+        eq(companyMemberships.principalType, "user"),
+        eq(companyMemberships.status, "active"),
+      ),
+    )
+    .limit(1);
+  return row?.userId ?? null;
+}
 
 export function applyPersistedExecutionWorkspaceConfig(input: {
   config: Record<string, unknown>;
@@ -3073,6 +3091,37 @@ export function heartbeatService(db: Db) {
         }, PERIODIC_SYNC_INTERVAL_MS);
       }
 
+      // Token usage throttle check
+      const tokenUsage = tokenUsageService(db);
+      const ownerUserId = await resolveCompanyOwnerUserId(db, agent.companyId);
+      let tokenThrottleApplied = false;
+      if (ownerUserId) {
+        const throttle = await tokenUsage.getThrottleDecision(ownerUserId);
+        if (throttle === "pause") {
+          logger.warn({ agentId: agent.id, companyId: agent.companyId, ownerUserId }, "Token usage exceeded 120%, pausing agent");
+          await logActivity(db, {
+            companyId: agent.companyId,
+            actorType: "system",
+            actorId: "token-usage-enforcer",
+            action: "budget_token_limit",
+            entityType: "agent",
+            entityId: agent.id,
+            details: { reason: "Token usage exceeded 120% of plan limit" },
+          });
+          await setRunStatus(run.id, "failed", {
+            error: "Token usage exceeded plan limit",
+            errorCode: "token_limit_exceeded",
+            finishedAt: new Date(),
+          });
+          await finalizeAgentStatus(agent.id, "failed");
+          return;
+        }
+        if (throttle === "throttle") {
+          logger.info({ agentId: agent.id, ownerUserId }, "Token usage over 100%, throttling heartbeat");
+          tokenThrottleApplied = true;
+        }
+      }
+
       const adapterResult = await adapter.execute({
         runId: run.id,
         agent,
@@ -3293,6 +3342,19 @@ export function heartbeatService(db: Db) {
         }
       }
       await finalizeAgentStatus(agent.id, outcome);
+
+      // If token throttle was applied, push lastHeartbeatAt forward by the
+      // agent's interval to effectively double the wait until the next scheduled wake.
+      if (tokenThrottleApplied) {
+        const policy = parseHeartbeatPolicy(agent);
+        if (policy.intervalSec > 0) {
+          const delayedAt = new Date(Date.now() + policy.intervalSec * 1000);
+          await db
+            .update(agents)
+            .set({ lastHeartbeatAt: delayedAt, updatedAt: new Date() })
+            .where(eq(agents.id, agent.id));
+        }
+      }
 
       // Auto-sync workspace to S3/MinIO after run (for cloud preview support)
       if (resolvedProjectId && executionWorkspace.cwd) {

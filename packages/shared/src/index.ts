@@ -340,6 +340,12 @@ export type {
   PluginWebhookDeliveryRecord,
   QuotaWindow,
   ProviderQuotaResult,
+  Plan,
+  UserSubscription,
+  SubscriptionWithPlan,
+  TokenUsage,
+  TokenUsageHistory,
+  SubscriptionStatus,
 } from "./types/index.js";
 
 export {

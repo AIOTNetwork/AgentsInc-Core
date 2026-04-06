@@ -261,12 +261,10 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     res.json(result);
   });
 
-  const MAX_COMPANIES_PER_USER = 5;
-
   router.post("/", validate(createCompanySchema), async (req, res) => {
     assertBoard(req);
     if (req.actor.source !== "local_implicit") {
-      // Enforce company limit per user
+      // Enforce company limit per user based on plan
       const userId = req.actor.userId;
       if (userId) {
         const owned = await db
@@ -279,8 +277,13 @@ export function companyRoutes(db: Db, storage?: StorageService) {
               eq(companyMemberships.status, "active"),
             ),
           );
-        if (owned.length >= MAX_COMPANIES_PER_USER) {
-          throw forbidden(`You can create up to ${MAX_COMPANIES_PER_USER} companies`);
+        const { billingService } = await import("../services/billing.js");
+        const billing = billingService(db);
+        const sub = await billing.getSubscription(userId);
+        if (sub.plan.maxCompanies !== null && owned.length >= sub.plan.maxCompanies) {
+          throw forbidden(
+            `Your ${sub.plan.name} plan allows up to ${sub.plan.maxCompanies} companies. Upgrade to create more.`,
+          );
         }
       }
     }

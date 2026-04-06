@@ -165,6 +165,14 @@ export type {
 } from "./access.js";
 export type { QuotaWindow, ProviderQuotaResult } from "./quota.js";
 export type {
+  Plan,
+  UserSubscription,
+  SubscriptionWithPlan,
+  TokenUsage,
+  TokenUsageHistory,
+  SubscriptionStatus,
+} from "./billing.js";
+export type {
   CompanyPortabilityInclude,
   CompanyPortabilityEnvInput,
   CompanyPortabilityFileEntry,
