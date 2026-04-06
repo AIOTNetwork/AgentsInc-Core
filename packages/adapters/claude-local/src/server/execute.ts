@@ -1,7 +1,11 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+const execFileAsync = promisify(execFile);
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import type { RunProcessResult } from "@paperclipai/adapter-utils/server-utils";
 import {
@@ -145,6 +149,17 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
   const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
+
+  // Ensure cwd is a git repo so Claude Code doesn't crash on git operations
+  const gitDirExists = await fs.stat(path.join(cwd, ".git")).then(() => true).catch(() => false);
+  if (!gitDirExists) {
+    try {
+      await execFileAsync("git", ["init"], { cwd, timeout: 10_000 });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to initialize git repo in "${cwd}": ${reason}`);
+    }
+  }
 
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
