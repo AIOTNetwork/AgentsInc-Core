@@ -617,6 +617,11 @@ export async function realizeExecutionWorkspace(input: {
     };
   }
 
+  // Ensure baseCwd is a git repo before attempting worktree operations
+  const isGitRepo = await runGit(["rev-parse", "--is-inside-work-tree"], input.base.baseCwd).catch(() => null);
+  if (!isGitRepo) {
+    await runGit(["init"], input.base.baseCwd);
+  }
   const repoRoot = await runGit(["rev-parse", "--show-toplevel"], input.base.baseCwd);
   const branchTemplate = asString(rawStrategy.branchTemplate, "{{issue.identifier}}-{{slug}}");
   const renderedBranch = renderWorkspaceTemplate(branchTemplate, {
