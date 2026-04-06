@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { promises as fs, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { and, asc, eq } from "drizzle-orm";
@@ -1296,10 +1296,10 @@ function resolveDesiredSkillKeys(
 function normalizeSkillDirectory(skill: CompanySkill) {
   if ((skill.sourceType !== "local_path" && skill.sourceType !== "catalog") || !skill.sourceLocator) return null;
   const resolved = path.resolve(skill.sourceLocator);
-  if (path.basename(resolved).toLowerCase() === "skill.md") {
-    return path.dirname(resolved);
-  }
-  return resolved;
+  const dir = path.basename(resolved).toLowerCase() === "skill.md" ? path.dirname(resolved) : resolved;
+  // Check if the directory actually exists on disk (K8s ephemeral storage may have wiped it)
+  try { statSync(dir); return dir; }
+  catch { return null; }
 }
 
 function normalizeSourceLocatorDirectory(sourceLocator: string | null) {
