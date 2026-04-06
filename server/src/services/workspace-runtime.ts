@@ -647,7 +647,7 @@ export async function realizeExecutionWorkspace(input: {
   // Create an initial empty commit so we have a valid ref to branch from.
   const hasCommits = await runGit(["rev-parse", "HEAD"], repoRoot).then(() => true, () => false);
   if (!hasCommits) {
-    await runGit(["commit", "--allow-empty", "-m", "Initial commit"], repoRoot);
+    await runGit(["-c", "user.name=Paperclip", "-c", "user.email=noreply@paperclip.dev", "commit", "--allow-empty", "-m", "Initial commit"], repoRoot);
     baseRef = "HEAD";
   }
 
