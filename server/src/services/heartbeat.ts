@@ -3098,7 +3098,14 @@ export function heartbeatService(db: Db) {
       if (ownerUserId) {
         const throttle = await tokenUsage.getThrottleDecision(ownerUserId);
         if (throttle === "pause") {
-          logger.warn({ agentId: agent.id, companyId: agent.companyId, ownerUserId }, "Token usage exceeded 120%, pausing agent");
+          const usage = await tokenUsage.getUsage(ownerUserId);
+          const hourlyPct = usage.hourly.percent ?? 0;
+          const weeklyPct = usage.weekly.percent ?? 0;
+          const limitType = hourlyPct >= weeklyPct ? "hourly" : "weekly";
+          const limitDetail = limitType === "hourly"
+            ? `Hourly: ${usage.hourly.used.toLocaleString()} / ${usage.hourly.limit?.toLocaleString() ?? "∞"} tokens (${hourlyPct}%)`
+            : `Weekly: ${usage.weekly.used.toLocaleString()} / ${usage.weekly.limit?.toLocaleString() ?? "∞"} tokens (${weeklyPct}%)`;
+          logger.warn({ agentId: agent.id, companyId: agent.companyId, ownerUserId, limitType, hourlyPct, weeklyPct }, "Token usage exceeded 120%, pausing agent");
           await logActivity(db, {
             companyId: agent.companyId,
             actorType: "system",
@@ -3106,10 +3113,10 @@ export function heartbeatService(db: Db) {
             action: "budget_token_limit",
             entityType: "agent",
             entityId: agent.id,
-            details: { reason: "Token usage exceeded 120% of plan limit" },
+            details: { reason: `Token usage exceeded plan ${limitType} limit. ${limitDetail}` },
           });
           await setRunStatus(run.id, "failed", {
-            error: "Token usage exceeded plan limit",
+            error: `Token usage exceeded plan ${limitType} limit. ${limitDetail}`,
             errorCode: "token_limit_exceeded",
             finishedAt: new Date(),
           });
