@@ -639,9 +639,17 @@ export async function realizeExecutionWorkspace(input: {
   const configuredBaseRef = typeof rawStrategy.baseRef === "string" && rawStrategy.baseRef.length > 0
     ? rawStrategy.baseRef
     : input.base.repoRef ?? null;
-  const baseRef = configuredBaseRef
+  let baseRef = configuredBaseRef
     ?? await detectDefaultBranch(repoRoot)
     ?? "HEAD";
+
+  // If the repo has no commits, HEAD is invalid and worktree add will fail.
+  // Create an initial empty commit so we have a valid ref to branch from.
+  const hasCommits = await runGit(["rev-parse", "HEAD"], repoRoot).then(() => true, () => false);
+  if (!hasCommits) {
+    await runGit(["commit", "--allow-empty", "-m", "Initial commit"], repoRoot);
+    baseRef = "HEAD";
+  }
 
   await fs.mkdir(worktreeParentDir, { recursive: true });
 
