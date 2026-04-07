@@ -622,7 +622,11 @@ export async function realizeExecutionWorkspace(input: {
   if (!isGitRepo) {
     await runGit(["init"], input.base.baseCwd);
   }
-  const repoRoot = await runGit(["rev-parse", "--show-toplevel"], input.base.baseCwd);
+  // Use --git-common-dir to resolve the main repo root even when baseCwd points
+  // inside a worktree (--show-toplevel returns the worktree root, not the main repo).
+  const gitCommonDir = await runGit(["rev-parse", "--git-common-dir"], input.base.baseCwd);
+  const resolvedGitCommonDir = path.resolve(input.base.baseCwd, gitCommonDir);
+  const repoRoot = path.dirname(resolvedGitCommonDir);
   const branchTemplate = asString(rawStrategy.branchTemplate, "{{issue.identifier}}-{{slug}}");
   const renderedBranch = renderWorkspaceTemplate(branchTemplate, {
     issue: input.issue,
@@ -652,6 +656,11 @@ export async function realizeExecutionWorkspace(input: {
   }
 
   await fs.mkdir(worktreeParentDir, { recursive: true });
+
+  // Prune stale worktree references left behind when a worktree directory is
+  // deleted without `git worktree remove` (e.g. process crash, timeout, manual cleanup).
+  // Without this, `git worktree add` fails with "'branch' is already used by worktree".
+  await runGit(["worktree", "prune"], repoRoot).catch(() => {});
 
   const existingWorktree = await directoryExists(worktreePath);
   if (existingWorktree) {
@@ -719,21 +728,46 @@ export async function realizeExecutionWorkspace(input: {
     if (!gitErrorIncludes(error, "already exists")) {
       throw error;
     }
-    await recordGitOperation(input.recorder, {
-      phase: "worktree_prepare",
-      args: ["worktree", "add", worktreePath, branchName],
-      cwd: repoRoot,
-      metadata: {
-        repoRoot,
-        worktreePath,
-        branchName,
-        baseRef,
-        created: false,
-        reusedExistingBranch: true,
-      },
-      successMessage: `Attached existing branch ${branchName} at ${worktreePath}\n`,
-      failureLabel: `git worktree add ${worktreePath}`,
-    });
+    try {
+      await recordGitOperation(input.recorder, {
+        phase: "worktree_prepare",
+        args: ["worktree", "add", worktreePath, branchName],
+        cwd: repoRoot,
+        metadata: {
+          repoRoot,
+          worktreePath,
+          branchName,
+          baseRef,
+          created: false,
+          reusedExistingBranch: true,
+        },
+        successMessage: `Attached existing branch ${branchName} at ${worktreePath}\n`,
+        failureLabel: `git worktree add ${worktreePath}`,
+      });
+    } catch (fallbackError) {
+      // If branch is "already used by worktree" due to a stale reference (race
+      // condition or concurrent agent), prune and retry once.
+      if (!gitErrorIncludes(fallbackError, "already used by worktree")) {
+        throw fallbackError;
+      }
+      await runGit(["worktree", "prune"], repoRoot);
+      await recordGitOperation(input.recorder, {
+        phase: "worktree_prepare",
+        args: ["worktree", "add", worktreePath, branchName],
+        cwd: repoRoot,
+        metadata: {
+          repoRoot,
+          worktreePath,
+          branchName,
+          baseRef,
+          created: false,
+          reusedExistingBranch: true,
+          prunedStaleWorktree: true,
+        },
+        successMessage: `Attached existing branch ${branchName} at ${worktreePath} (after pruning stale worktree)\n`,
+        failureLabel: `git worktree add ${worktreePath} (after prune)`,
+      });
+    }
   }
   await provisionExecutionWorktree({
     strategy: rawStrategy,
