@@ -212,6 +212,7 @@ function renderWorkspaceTemplate(template: string, input: {
 }) {
   const issueIdentifier = input.issue?.identifier ?? input.issue?.id ?? "issue";
   const slug = sanitizeSlugPart(input.issue?.title, sanitizeSlugPart(issueIdentifier, "issue"));
+  const agentId = input.agent.id ?? "";
   return renderTemplate(template, {
     issue: {
       id: input.issue?.id ?? "",
@@ -219,7 +220,8 @@ function renderWorkspaceTemplate(template: string, input: {
       title: input.issue?.title ?? "",
     },
     agent: {
-      id: input.agent.id ?? "",
+      id: agentId,
+      shortId: agentId.slice(0, 8),
       name: input.agent.name,
     },
     project: {
@@ -299,6 +301,42 @@ async function runGit(args: string[], cwd: string): Promise<string> {
 function gitErrorIncludes(error: unknown, needle: string) {
   const message = error instanceof Error ? error.message : String(error);
   return message.toLowerCase().includes(needle.toLowerCase());
+}
+
+const WORKTREE_LOCK_STALE_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Acquire a file-based lock for worktree operations on a repo to prevent
+ * TOCTOU races when multiple agents create worktrees concurrently.
+ * Returns a release function. Stale locks (>5min) are automatically broken.
+ */
+async function acquireWorktreeLock(repoRoot: string): Promise<() => Promise<void>> {
+  const lockPath = path.join(repoRoot, ".paperclip", ".worktree.lock");
+  await fs.mkdir(path.dirname(lockPath), { recursive: true });
+
+  const maxAttempts = 30;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const handle = await fs.open(lockPath, "wx");
+      await handle.writeFile(JSON.stringify({ pid: process.pid, ts: Date.now() }));
+      await handle.close();
+      return async () => { await fs.rm(lockPath, { force: true }); };
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      // Check for stale lock
+      try {
+        const stat = await fs.stat(lockPath);
+        if (Date.now() - stat.mtimeMs > WORKTREE_LOCK_STALE_MS) {
+          await fs.rm(lockPath, { force: true });
+          continue; // retry immediately after breaking stale lock
+        }
+      } catch {
+        continue; // lock was just released, retry
+      }
+      await delay(200 + Math.random() * 300);
+    }
+  }
+  throw new Error(`Timed out acquiring worktree lock at ${lockPath}`);
 }
 
 async function detectDefaultBranch(repoRoot: string): Promise<string | null> {
@@ -627,7 +665,7 @@ export async function realizeExecutionWorkspace(input: {
   const gitCommonDir = await runGit(["rev-parse", "--git-common-dir"], input.base.baseCwd);
   const resolvedGitCommonDir = path.resolve(input.base.baseCwd, gitCommonDir);
   const repoRoot = path.dirname(resolvedGitCommonDir);
-  const branchTemplate = asString(rawStrategy.branchTemplate, "{{issue.identifier}}-{{slug}}");
+  const branchTemplate = asString(rawStrategy.branchTemplate, "{{issue.identifier}}-{{slug}}-{{agent.shortId}}");
   const renderedBranch = renderWorkspaceTemplate(branchTemplate, {
     issue: input.issue,
     agent: input.agent,
@@ -656,6 +694,11 @@ export async function realizeExecutionWorkspace(input: {
   }
 
   await fs.mkdir(worktreeParentDir, { recursive: true });
+
+  // Acquire a file-based lock to prevent TOCTOU races when multiple agents
+  // create worktrees concurrently on the same repo.
+  const releaseLock = await acquireWorktreeLock(repoRoot);
+  try {
 
   // Prune stale worktree references left behind when a worktree directory is
   // deleted without `git worktree remove` (e.g. process crash, timeout, manual cleanup).
@@ -769,6 +812,11 @@ export async function realizeExecutionWorkspace(input: {
       });
     }
   }
+
+  } finally {
+    await releaseLock();
+  }
+
   await provisionExecutionWorktree({
     strategy: rawStrategy,
     base: input.base,
