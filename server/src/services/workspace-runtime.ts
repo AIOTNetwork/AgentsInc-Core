@@ -658,6 +658,12 @@ export async function realizeExecutionWorkspace(input: {
   // Ensure baseCwd is a git repo before attempting worktree operations
   const isGitRepo = await runGit(["rev-parse", "--is-inside-work-tree"], input.base.baseCwd).catch(() => null);
   if (!isGitRepo) {
+    if (input.base.repoUrl) {
+      throw new Error(
+        `Workspace "${input.base.baseCwd}" is not a git repository. ` +
+        `Clone from "${input.base.repoUrl}" may have failed during workspace setup.`,
+      );
+    }
     await runGit(["init"], input.base.baseCwd);
   }
   // Use --git-common-dir to resolve the main repo root even when baseCwd points
