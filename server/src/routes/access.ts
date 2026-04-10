@@ -2879,8 +2879,60 @@ export function accessRoutes(
   router.get("/companies/:companyId/members", async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertCompanyPermission(req, companyId, "users:manage_permissions");
-    const members = await access.listMembers(companyId);
-    res.json(members);
+    const [members, grants] = await Promise.all([
+      access.listMembers(companyId),
+      access.listCompanyGrants(companyId),
+    ]);
+
+    // Collect unique principalIds by type and batch-fetch name/email
+    const allPrincipals = [...members, ...grants];
+    const userIds = [...new Set(allPrincipals.filter((p) => p.principalType === "user").map((p) => p.principalId))];
+    const agentIds = [...new Set(allPrincipals.filter((p) => p.principalType === "agent").map((p) => p.principalId))];
+    const [userMap, agentMap] = await Promise.all([
+      access.getUsersByIds(userIds),
+      agents.getByIds(agentIds),
+    ]);
+
+    function resolvePrincipal(type: string, id: string) {
+      if (type === "user") {
+        const u = userMap.get(id);
+        return { name: u?.name ?? null, email: u?.email ?? null };
+      }
+      const a = agentMap.get(id);
+      return { name: a?.name ?? null, email: null };
+    }
+
+    const grantsByPrincipal = new Map<
+      string,
+      { id: string; name: string | null; email: string | null; companyId: string; principalId: string; permissionKey: string; updatedAt: Date | null }[]
+    >();
+    for (const grant of grants) {
+      const key = `${grant.principalType}:${grant.principalId}`;
+      const { name, email } = resolvePrincipal(grant.principalType, grant.principalId);
+      const slim = {
+        id: grant.id,
+        name,
+        email,
+        companyId: grant.companyId,
+        principalId: grant.principalId,
+        permissionKey: grant.permissionKey,
+        updatedAt: grant.updatedAt,
+      };
+      const list = grantsByPrincipal.get(key) ?? [];
+      list.push(slim);
+      grantsByPrincipal.set(key, list);
+    }
+
+    const enriched = members.map((m) => {
+      const { name, email } = resolvePrincipal(m.principalType, m.principalId);
+      return {
+        ...m,
+        name,
+        email,
+        grants: grantsByPrincipal.get(`${m.principalType}:${m.principalId}`) ?? [],
+      };
+    });
+    res.json(enriched);
   });
 
   router.patch(

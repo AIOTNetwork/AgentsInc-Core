@@ -689,5 +689,14 @@ export function agentService(db: Db) {
       }
       return { agent: null, ambiguous: false } as const;
     },
+
+    getByIds: async (agentIds: string[]): Promise<Map<string, { name: string }>> => {
+      if (agentIds.length === 0) return new Map();
+      const rows = await db
+        .select({ id: agents.id, name: agents.name })
+        .from(agents)
+        .where(inArray(agents.id, agentIds));
+      return new Map(rows.map((r) => [r.id, { name: r.name }]));
+    },
   };
 }

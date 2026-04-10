@@ -283,6 +283,25 @@ export function accessService(db: Db) {
     return sourceMemberships;
   }
 
+  async function listCompanyGrants(companyId: string) {
+    return db
+      .select()
+      .from(principalPermissionGrants)
+      .where(eq(principalPermissionGrants.companyId, companyId))
+      .orderBy(principalPermissionGrants.permissionKey);
+  }
+
+  async function getUsersByIds(
+    userIds: string[],
+  ): Promise<Map<string, { name: string; email: string }>> {
+    if (userIds.length === 0) return new Map();
+    const rows = await db
+      .select({ id: authUsers.id, name: authUsers.name, email: authUsers.email })
+      .from(authUsers)
+      .where(inArray(authUsers.id, userIds));
+    return new Map(rows.map((r) => [r.id, { name: r.name, email: r.email }]));
+  }
+
   async function listPrincipalGrants(
     companyId: string,
     principalType: PrincipalType,
@@ -378,7 +397,9 @@ export function accessService(db: Db) {
     listUserCompanyAccess,
     setUserCompanyAccess,
     setPrincipalGrants,
+    listCompanyGrants,
     listPrincipalGrants,
     setPrincipalPermission,
+    getUsersByIds,
   };
 }
