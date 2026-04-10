@@ -13,7 +13,7 @@ import { validate } from "../middleware/validate.js";
 import { projectService, heartbeatService, logActivity, workspaceOperationService } from "../services/index.js";
 import { queueIssueAssignmentWakeup } from "../services/issue-assignment-wakeup.js";
 import { conflict, notFound } from "../errors.js";
-import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertCompanyAccess, getActorInfo, assertCompanyPermission, PermissionLevel } from "./authz.js";
 import { startRuntimeServicesForWorkspaceControl, stopRuntimeServicesForProjectWorkspace } from "../services/workspace-runtime.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { createWorkspaceSnapshot, getWorkspaceS3Sync } from "../services/workspace-snapshot.js";
@@ -148,8 +148,11 @@ export function projectRoutes(db: Db) {
       res.status(404).json({ error: "Project not found" });
       return;
     }
-    assertCompanyAccess(req, existing.companyId);
-    const body = { ...req.body };
+    const level = await assertCompanyPermission(req, db, existing.companyId, "projects:edit");
+    const ALLOWED_FIELDS = ["name", "description", "color", "targetDate", "status", "leadAgentId"];
+    const body = level === PermissionLevel.ELEVATED
+      ? { ...req.body }
+      : Object.fromEntries(Object.entries(req.body).filter(([key]) => ALLOWED_FIELDS.includes(key)));
     if (typeof body.archivedAt === "string") {
       body.archivedAt = new Date(body.archivedAt);
     }
