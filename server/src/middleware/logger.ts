@@ -18,10 +18,15 @@ function resolveServerLogDir(): string {
 const logDir = resolveServerLogDir();
 fs.mkdirSync(logDir, { recursive: true });
 
-const logFile = path.join(logDir, "server.log");
+function formatFilenameTimestamp(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}_${pad(d.getMonth() + 1)}_${pad(d.getDate())}_${pad(d.getHours())}_${pad(d.getMinutes())}_${pad(d.getSeconds())}`;
+}
+
+const logFile = path.join(logDir, `server_${formatFilenameTimestamp(new Date())}.log`);
 
 const sharedOpts = {
-  translateTime: "HH:MM:ss",
+  translateTime: "SYS:yyyy-mm-dd HH:MM:sso",
   ignore: "pid,hostname",
   singleLine: true,
 };
