@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { promises as fs, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { logger } from "../middleware/logger.js";
 import { and, asc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { companySkills } from "@paperclipai/db";
@@ -1525,6 +1526,40 @@ export function companySkillService(db: Db) {
     return [];
   }
 
+  async function tryRestoreSkillFromDb(skill: CompanySkill): Promise<boolean> {
+    const skillDir = normalizeSourceLocatorDirectory(skill.sourceLocator);
+    if (!skillDir) return false;
+
+    const hasMarkdown = Boolean(skill.markdown?.trim());
+    const meta = getSkillMeta(skill);
+    const bundled = isPlainRecord(meta.bundledFiles) ? meta.bundledFiles as Record<string, string> : null;
+    const hasBundled = bundled && Object.keys(bundled).length > 0;
+
+    if (!hasMarkdown && !hasBundled) return false;
+
+    try {
+      await fs.mkdir(skillDir, { recursive: true });
+
+      if (hasMarkdown) {
+        await fs.writeFile(path.join(skillDir, "SKILL.md"), skill.markdown, "utf8");
+      }
+
+      if (bundled) {
+        for (const [filePath, content] of Object.entries(bundled)) {
+          if (typeof content !== "string") continue;
+          if (filePath === "SKILL.md" && hasMarkdown) continue;
+          const targetPath = path.resolve(skillDir, filePath);
+          await fs.mkdir(path.dirname(targetPath), { recursive: true });
+          await fs.writeFile(targetPath, content, "utf8");
+        }
+      }
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function pruneMissingLocalPathSkills(companyId: string) {
     const rows = await db
       .select()
@@ -1536,6 +1571,14 @@ export function companySkillService(db: Db) {
 
     for (const skill of skills) {
       if (!missingIds.has(skill.id)) continue;
+
+      const restored = await tryRestoreSkillFromDb(skill);
+      if (restored) {
+        logger.info({ companyId, skillId: skill.id, key: skill.key, slug: skill.slug }, "Restored missing local skill from DB");
+        continue;
+      }
+
+      logger.warn({ companyId, skillId: skill.id, key: skill.key, slug: skill.slug }, "Pruning local skill — no DB data to restore from");
       await db
         .delete(companySkills)
         .where(eq(companySkills.id, skill.id));
