@@ -17,7 +17,7 @@ import { assertCompanyAccess, getActorInfo, assertCompanyPermission, PermissionL
 import { startRuntimeServicesForWorkspaceControl, stopRuntimeServicesForProjectWorkspace } from "../services/workspace-runtime.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { createWorkspaceSnapshot, getWorkspaceS3Sync } from "../services/workspace-snapshot.js";
-import { gitClone, gitFetchAndReset, gitCommitLocal, gitMergeLocalAndPushBase, type GitMergeResult } from "../services/workspace-git.js";
+import { gitClone, gitFetchAndReset, gitCommitLocal, gitMergeLocalAndPushBase, GIT_WARNING_NOTHING_TO_COMMIT, type GitMergeResult } from "../services/workspace-git.js";
 import { executionWorkspaceService } from "../services/index.js";
 import { logger } from "../middleware/logger.js";
 import fsSync from "node:fs";
@@ -1036,8 +1036,8 @@ export function projectRoutes(db: Db) {
         continue;
       }
 
-      if (commitResult.warning === "nothing to commit") {
-        results.push({ workspaceName: ews.name ?? branch, branch, ok: true, warning: "nothing to commit" });
+      if (commitResult.warning === GIT_WARNING_NOTHING_TO_COMMIT) {
+        results.push({ workspaceName: ews.name ?? branch, branch, ok: true, warning: GIT_WARNING_NOTHING_TO_COMMIT });
         continue;
       }
 
@@ -1075,7 +1075,7 @@ export function projectRoutes(db: Db) {
 
         const commitResult = await gitCommitLocal({ cwd: projectWsDir, commitMessage });
 
-        if (commitResult.ok && commitResult.warning !== "nothing to commit") {
+        if (commitResult.ok && commitResult.warning !== GIT_WARNING_NOTHING_TO_COMMIT) {
           if (branch === baseBranch) {
             // Already on main — just push directly
             try {
@@ -1108,7 +1108,7 @@ export function projectRoutes(db: Db) {
             });
           }
         } else {
-          results.push({ workspaceName: "project", branch, ok: true, warning: commitResult.warning ?? "nothing to commit" });
+          results.push({ workspaceName: "project", branch, ok: true, warning: commitResult.warning ?? GIT_WARNING_NOTHING_TO_COMMIT });
         }
       }
     }
@@ -1159,7 +1159,7 @@ export function projectRoutes(db: Db) {
           commitMessage: `workspace sync before preview: ${project.name}`,
         });
 
-        if (commitResult.ok && commitResult.warning !== "nothing to commit") {
+        if (commitResult.ok && commitResult.warning !== GIT_WARNING_NOTHING_TO_COMMIT) {
           const mergeResult = await gitMergeLocalAndPushBase({
             worktreeCwd: snapshotWsDir,
             credUrl: snapshotCredUrl,

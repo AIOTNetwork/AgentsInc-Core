@@ -20,6 +20,19 @@ import type { GitHubAppService } from "./github-app.js";
 const execFile = promisify(execFileCallback);
 const GIT_TIMEOUT = 60_000;
 
+// ── Sentinel strings ────────────────────────────────────────────────────
+// `GIT_WARNING_NOTHING_TO_COMMIT` is returned by `gitCommitLocal` in
+// `result.warning` when the working tree is clean. Callers compare against
+// it to decide whether a commit was actually produced. Keep both sides
+// referencing this constant so the contract can't drift silently.
+//
+// `GIT_ERROR_NOT_A_REPOSITORY` is a substring that appears in git's stderr
+// when a command runs in a non-git directory (e.g. "fatal: not a git
+// repository (or any of the parent directories): .git"). Used with
+// `.includes()` to detect that case.
+export const GIT_WARNING_NOTHING_TO_COMMIT = "nothing to commit";
+export const GIT_ERROR_NOT_A_REPOSITORY = "not a git repository";
+
 // ── Types ───────────────────────────────────────────────────────────────
 
 interface GitResult {
@@ -126,7 +139,7 @@ export async function gitCommitLocal(opts: {
       const { stdout: status } = await execFile("git", ["-C", cwd, "status", "--porcelain"], { timeout: 10_000 });
       if (!status.trim()) {
         logger.debug({ cwd, op: "commit" }, "[git] nothing to commit");
-        return { ok: true, warning: "nothing to commit" };
+        return { ok: true, warning: GIT_WARNING_NOTHING_TO_COMMIT };
       }
       logger.info({ cwd, message: commitMessage, op: "commit" }, "[git] committing changes");
       await execFile("git", ["-C", cwd, "commit", "-m", commitMessage], { timeout: GIT_TIMEOUT });
@@ -135,7 +148,7 @@ export async function gitCommitLocal(opts: {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       // Non-git directories are expected for non-git workspaces — don't spam logs
-      if (msg.includes("not a git repository")) {
+      if (msg.includes(GIT_ERROR_NOT_A_REPOSITORY)) {
         logger.debug({ cwd, op: "commit" }, "[git] skipping non-git directory");
       } else {
         logger.warn({ cwd, err: msg, durationMs: Date.now() - start, op: "commit" }, "[git] commit failed");
@@ -247,13 +260,18 @@ export async function gitCommitMergeAndPush(opts: {
     commitMessage: opts.commitMessage,
   });
 
-  if (!commitResult.ok) {
-    return { ...commitResult, conflicted: false };
-  }
-  if (commitResult.warning === "nothing to commit") {
+  // Hard failure — only skip push when the cwd genuinely isn't a git repo.
+  // For any other commit failure, fall through to merge+push so that
+  // previously-committed-but-unpushed work still has a chance to sync.
+  if (!commitResult.ok && commitResult.warning?.includes(GIT_ERROR_NOT_A_REPOSITORY)) {
     return { ...commitResult, conflicted: false };
   }
 
+  // Always attempt merge+push, even when this run produced no new commit.
+  // The agent may have committed inside its own process (e.g., Claude Code's
+  // /commit skill), leaving the working tree clean but local ahead of origin.
+  // Pushing unconditionally lets those stranded commits sync on the next run.
+  // When local matches base/origin, merge and push are no-ops.
   const mergeResult = await gitMergeLocalAndPushBase({
     worktreeCwd: opts.cwd,
     credUrl: opts.credUrl,
@@ -262,9 +280,12 @@ export async function gitCommitMergeAndPush(opts: {
   });
 
   if (!mergeResult.ok) {
+    const noNewCommit = commitResult.warning === GIT_WARNING_NOTHING_TO_COMMIT;
     return {
       ok: false,
-      warning: `committed locally but merge to ${opts.baseBranch} failed: ${mergeResult.warning}`,
+      warning: noNewCommit
+        ? `no new commit, but push of existing commits failed: ${mergeResult.warning}`
+        : `committed locally but merge to ${opts.baseBranch} failed: ${mergeResult.warning}`,
       conflicted: mergeResult.conflicted,
       conflictFiles: mergeResult.conflictFiles,
     };
