@@ -300,7 +300,6 @@ export {
   type SetPluginState,
   type ListPluginState,
 } from "./plugin.js";
-
 export {
   createPreRegisterSchema,
   preRegisterQuerySchema,
@@ -309,3 +308,5 @@ export {
   type PreRegisterQuery,
   type RecordMint,
 } from "./pre-register.js";
+
+export * from "./deployment.js";
