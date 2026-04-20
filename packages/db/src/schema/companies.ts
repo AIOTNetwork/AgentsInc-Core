@@ -13,6 +13,8 @@ export const companies = pgTable(
     issueCounter: integer("issue_counter").notNull().default(0),
     budgetMonthlyCents: integer("budget_monthly_cents").notNull().default(0),
     spentMonthlyCents: integer("spent_monthly_cents").notNull().default(0),
+    deploymentMaxDeployableProjects: integer("deployment_max_deployable_projects").notNull().default(1),
+    deploymentMaxDeploymentsPerRepo: integer("deployment_max_deployments_per_repo").notNull().default(1),
     requireBoardApprovalForNewAgents: boolean("require_board_approval_for_new_agents")
       .notNull()
       .default(true),

@@ -14,6 +14,8 @@ export const plans = pgTable(
     stripePriceIdMonthly: text("stripe_price_id_monthly"),
     stripePriceIdYearly: text("stripe_price_id_yearly"),
     sortOrder: integer("sort_order").notNull().default(0),
+    deploymentMaxDeployableProjectsCap: integer("deployment_max_deployable_projects_cap").notNull().default(1),
+    deploymentMaxDeploymentsPerRepoCap: integer("deployment_max_deployments_per_repo_cap").notNull().default(1),
     isPublic: boolean("is_public").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
