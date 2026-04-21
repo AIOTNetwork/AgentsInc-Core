@@ -9,6 +9,7 @@ import {
   type DeploymentsPatchBody,
   type DeploymentResultBody,
 } from "@paperclipai/shared";
+import { logger } from "../middleware/logger.js";
 import { agentService } from "./agents.js";
 import { deploymentQuotaService } from "./deployment-quota.js";
 import {
@@ -16,12 +17,17 @@ import {
   type ProjectDeploymentRow,
 } from "./project-deployments-db.js";
 
+const SWEEP_DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
+
 export class DeploymentServiceError extends Error {
   constructor(public code: string, public details: Record<string, unknown> = {}) { super(code); }
 }
 
 export interface DeploymentsServiceDeps {
-  heartbeatWakeup: (agentId: string, opts: Record<string, unknown>) => Promise<{ runId: string } | null>;
+  // Return value is intentionally opaque — we don't consume it. The real
+  // heartbeat.wakeup returns a heartbeat-runs row or null; tests pass any
+  // stand-in. Keep it `unknown` to avoid coupling to the full row shape.
+  heartbeatWakeup: (agentId: string, opts: Record<string, unknown>) => Promise<unknown>;
 }
 
 export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
@@ -98,7 +104,7 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
         const status = row?.status as DeploymentStatus | undefined;
         if (body.action === DeploymentAction.DEPLOY) {
           if (row && status !== DeploymentStatus.STOPPED &&
-              !DEPLOYMENT_IDLE_STATUSES.includes(status!)) {
+            !DEPLOYMENT_IDLE_STATUSES.includes(status!)) {
             conflicts.push({ targetName: t.targetName, currentStatus: status! });
           }
         } else {
@@ -190,15 +196,15 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
     switch (body.kind) {
       case DeploymentResultKind.DEPLOY_STARTED:
         patch.status = DeploymentStatus.DEPLOYING; break;
-      case DeploymentResultKind.TEARDOWN_STARTED:  break; // already STOPPING
+      case DeploymentResultKind.TEARDOWN_STARTED: break; // already STOPPING
       case DeploymentResultKind.RECONCILE_STARTED: break; // no-op
       case DeploymentResultKind.DEPLOY:
         if (body.success) {
           patch.status = DeploymentStatus.DEPLOYED;
-          patch.vercelProjectId    = body.vercelProjectId    ?? row.vercelProjectId;
+          patch.vercelProjectId = body.vercelProjectId ?? row.vercelProjectId;
           patch.vercelDeploymentId = body.vercelDeploymentId ?? row.vercelDeploymentId;
-          patch.url                = body.url                ?? row.url;
-          patch.lastError          = null;
+          patch.url = body.url ?? row.url;
+          patch.lastError = null;
         } else {
           patch.status = DeploymentStatus.DEPLOY_FAILED;
           patch.lastError = body.error ?? "unknown error";
@@ -214,8 +220,8 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
         break;
       case DeploymentResultKind.RECONCILE:
         if (body.success) {
-          patch.url                = body.url                ?? row.url;
-          patch.vercelProjectId    = body.vercelProjectId    ?? row.vercelProjectId;
+          patch.url = body.url ?? row.url;
+          patch.vercelProjectId = body.vercelProjectId ?? row.vercelProjectId;
           patch.vercelDeploymentId = body.vercelDeploymentId ?? row.vercelDeploymentId;
         } else {
           patch.lastError = body.error ?? "reconcile failed";
@@ -232,8 +238,29 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
     return rows.map(toDeployment);
   }
 
-  return { applyPatch, applyResult, list };
+  /**
+   * Flip rows stuck in DEPLOYING or STOPPING past the timeout window into
+   * DEPLOY_FAILED / STOP_FAILED respectively. Called by the startup scheduler
+   * tick; safe to call manually for tests. Uses the scoped `deploymentsDb`.
+   */
+  async function sweepStuck(
+    opts: { now?: Date; timeoutMs?: number } = {},
+  ): Promise<{ swept: number; sweptIds: string[] }> {
+    const now = opts.now ?? new Date();
+    const timeoutMs = opts.timeoutMs ?? SWEEP_DEFAULT_TIMEOUT_MS;
+    const { sweptIds } = await deploymentsDb.sweepStuck(now, timeoutMs);
+    if (sweptIds.length > 0) {
+      logger.warn(
+        { count: sweptIds.length, ids: sweptIds },
+        "deployment timeout sweep flipped stuck rows",
+      );
+    }
+    return { swept: sweptIds.length, sweptIds };
+  }
+
+  return { applyPatch, applyResult, list, sweepStuck };
 }
+
 
 function toDeployment(row: ProjectDeploymentRow): Deployment {
   return {

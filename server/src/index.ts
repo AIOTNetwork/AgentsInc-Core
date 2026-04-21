@@ -29,6 +29,7 @@ import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import {
+  deploymentsService,
   feedbackService,
   heartbeatService,
   reconcilePersistedRuntimeServicesOnStartup,
@@ -587,6 +588,7 @@ export async function startServer(): Promise<StartedServer> {
   if (config.heartbeatSchedulerEnabled) {
     const heartbeat = heartbeatService(db as any);
     const routines = routineService(db as any);
+    const deploymentsSvc = deploymentsService(db as any, { heartbeatWakeup: heartbeat.wakeup });
   
     // Reap orphaned running runs at startup while in-memory execution state is empty,
     // then resume any persisted queued runs that were waiting on the previous process.
@@ -618,7 +620,15 @@ export async function startServer(): Promise<StartedServer> {
         .catch((err) => {
           logger.error({ err }, "routine scheduler tick failed");
         });
-  
+
+      // Deployment timeout sweep: flip rows stuck in DEPLOYING / STOPPING
+      // past 15 minutes into DEPLOY_FAILED / STOP_FAILED so the UI unblocks.
+      void deploymentsSvc
+        .sweepStuck()
+        .catch((err) => {
+          logger.error({ err }, "deployment timeout sweep failed");
+        });
+
       // Periodically reap orphaned runs (5-min staleness threshold) and make sure
       // persisted queued work is still being driven forward.
       void heartbeat

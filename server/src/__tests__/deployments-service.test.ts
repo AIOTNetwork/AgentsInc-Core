@@ -69,4 +69,45 @@ describeEmbeddedPostgres("deploymentsService.applyPatch", () => {
       body: { action: DeploymentAction.STOP, targets: [{ targetName: "web" }] },
     })).rejects.toMatchObject({ code: "invalid_state" });
   });
+
+  describe("sweepStuck", () => {
+    it("flips DEPLOYING → DEPLOY_FAILED after the timeout window", async () => {
+      await db.insert(projectDeployments).values({
+        companyId, projectId, targetName: "web",
+        type: DeploymentType.PREVIEW, status: DeploymentStatus.DEPLOYING,
+        updatedAt: new Date(Date.now() - 16 * 60 * 1000),
+      });
+      const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+      const res = await svc.sweepStuck({ now: new Date() });
+      expect(res.swept).toBe(1);
+      const [row] = await db.select().from(projectDeployments);
+      expect(row!.status).toBe(DeploymentStatus.DEPLOY_FAILED);
+      expect(row!.lastError).toMatch(/timed out/i);
+    });
+
+    it("flips STOPPING → STOP_FAILED", async () => {
+      await db.insert(projectDeployments).values({
+        companyId, projectId, targetName: "api",
+        type: DeploymentType.PREVIEW, status: DeploymentStatus.STOPPING,
+        updatedAt: new Date(Date.now() - 20 * 60 * 1000),
+      });
+      const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+      const res = await svc.sweepStuck({ now: new Date() });
+      expect(res.swept).toBe(1);
+      const [row] = await db.select().from(projectDeployments);
+      expect(row!.status).toBe(DeploymentStatus.STOP_FAILED);
+    });
+
+    it("leaves fresh rows alone", async () => {
+      await db.insert(projectDeployments).values({
+        companyId, projectId, targetName: "web",
+        type: DeploymentType.PREVIEW, status: DeploymentStatus.DEPLOYING,
+      });
+      const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+      const res = await svc.sweepStuck({ now: new Date() });
+      expect(res.swept).toBe(0);
+      const [row] = await db.select().from(projectDeployments);
+      expect(row!.status).toBe(DeploymentStatus.DEPLOYING);
+    });
+  });
 });

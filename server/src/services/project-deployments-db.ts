@@ -1,7 +1,7 @@
-import { and, countDistinct, eq, inArray } from "drizzle-orm";
+import { and, countDistinct, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { projectDeployments } from "@paperclipai/db";
-import { DEPLOYMENT_ACTIVE_STATUSES } from "@paperclipai/shared";
+import { DEPLOYMENT_ACTIVE_STATUSES, DeploymentStatus } from "@paperclipai/shared";
 
 export type ProjectDeploymentRow = typeof projectDeployments.$inferSelect;
 export type ProjectDeploymentInsert = typeof projectDeployments.$inferInsert;
@@ -74,10 +74,29 @@ export function projectDeploymentsDbService(db: Db) {
     return row!;
   }
 
+  async function sweepStuck(
+    now: Date,
+    timeoutMs: number,
+  ): Promise<{ sweptIds: string[] }> {
+    const threshold = new Date(now.getTime() - timeoutMs);
+    const rows = await db.update(projectDeployments).set({
+      status: sql`CASE WHEN ${projectDeployments.status} = ${DeploymentStatus.DEPLOYING}
+                       THEN ${DeploymentStatus.DEPLOY_FAILED}
+                       ELSE ${DeploymentStatus.STOP_FAILED} END`,
+      lastError: `timed out after ${Math.round(timeoutMs / 60000)} min with no agent report`,
+      updatedAt: now,
+    }).where(and(
+      inArray(projectDeployments.status, [DeploymentStatus.DEPLOYING, DeploymentStatus.STOPPING]),
+      lt(projectDeployments.updatedAt, threshold),
+    )).returning({ id: projectDeployments.id });
+    return { sweptIds: rows.map(r => r.id) };
+  }
+
   return {
     getByCriteria,
     countActiveProjectsInCompany,
     insert,
     updateById,
+    sweepStuck,
   };
 }
