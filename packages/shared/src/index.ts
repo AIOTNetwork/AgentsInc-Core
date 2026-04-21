@@ -607,6 +607,7 @@ export {
 } from "./validators/index.js";
 
 export * from "./constants/deployment.js";
+export * from "./validators/deployment.js";
 
 export { API_PREFIX, API } from "./api.js";
 export { normalizeAgentUrlKey, deriveAgentUrlKey, isUuidLike } from "./agent-url-key.js";

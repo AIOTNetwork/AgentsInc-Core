@@ -1,9 +1,13 @@
 import { z } from "zod";
 import {
-  DEPLOYMENT_STATUSES,
-  DEPLOYMENT_TYPES,
+  DEPLOYMENT_ACTIONS,
   DEPLOYMENT_PROVIDERS,
+  DEPLOYMENT_RESULT_KINDS,
+  DEPLOYMENT_STATUSES,
   DEPLOYMENT_TARGET_NAME_RE,
+  DEPLOYMENT_TYPES,
+  DeploymentAction,
+  isStartedDeploymentResultKind,
 } from "../constants/deployment.js";
 
 export const deploymentTargetNameSchema = z
@@ -13,46 +17,48 @@ export const deploymentTargetNameSchema = z
 export const deploymentTypeSchema = z.enum(DEPLOYMENT_TYPES);
 export const deploymentStatusSchema = z.enum(DEPLOYMENT_STATUSES);
 export const deploymentProviderSchema = z.enum(DEPLOYMENT_PROVIDERS);
+export const deploymentActionSchema = z.enum(DEPLOYMENT_ACTIONS);
+export const deploymentResultKindSchema = z.enum(DEPLOYMENT_RESULT_KINDS);
 
-const deployTargetSchema = z.object({
+const deploymentTargetEntrySchema = z.object({
   targetName: deploymentTargetNameSchema,
-  type: deploymentTypeSchema,
+  type: deploymentTypeSchema.optional(),
 });
-const stopTargetSchema = z.object({ targetName: deploymentTargetNameSchema });
 
-export const deploymentsPatchSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("deploy"), targets: z.array(deployTargetSchema).min(1).max(20) }),
-  z.object({ action: z.literal("stop"),   targets: z.array(stopTargetSchema).min(1).max(20) }),
-  z.object({ action: z.literal("refresh") }),
-]);
+export const deploymentsPatchSchema = z
+  .object({
+    action: deploymentActionSchema,
+    targets: z.array(deploymentTargetEntrySchema).min(1).max(20).optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.action === DeploymentAction.REFRESH) return !data.targets;
+      if (!data.targets || data.targets.length === 0) return false;
+      if (data.action === DeploymentAction.DEPLOY) {
+        return data.targets.every((t) => typeof t.type === "string");
+      }
+      return true; // STOP: targetName only; type not required
+    },
+    { message: "invalid body shape for action" },
+  );
 export type DeploymentsPatchBody = z.infer<typeof deploymentsPatchSchema>;
 
-export const deploymentResultSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("deploy_started") }),
-  z.object({
-    kind: z.literal("deploy"),
-    success: z.boolean(),
+export const deploymentResultSchema = z
+  .object({
+    kind: deploymentResultKindSchema,
+    success: z.boolean().optional(),
     vercelProjectId: z.string().optional(),
     vercelDeploymentId: z.string().optional(),
     url: z.string().optional(),
     error: z.string().optional(),
-  }),
-  z.object({ kind: z.literal("teardown_started") }),
-  z.object({
-    kind: z.literal("teardown"),
-    success: z.boolean(),
-    error: z.string().optional(),
-  }),
-  z.object({ kind: z.literal("reconcile_started") }),
-  z.object({
-    kind: z.literal("reconcile"),
-    success: z.boolean(),
-    vercelProjectId: z.string().optional(),
-    vercelDeploymentId: z.string().optional(),
-    url: z.string().optional(),
-    error: z.string().optional(),
-  }),
-]);
+  })
+  .refine(
+    (data) =>
+      isStartedDeploymentResultKind(data.kind)
+        ? data.success === undefined
+        : typeof data.success === "boolean",
+    { message: "success required on final kinds", path: ["success"] },
+  );
 export type DeploymentResultBody = z.infer<typeof deploymentResultSchema>;
 
 export const deploymentSettingsUpdateSchema = z.object({

@@ -698,5 +698,16 @@ export function agentService(db: Db) {
         .where(inArray(agents.id, agentIds));
       return new Map(rows.map((r) => [r.id, { name: r.name }]));
     },
+
+    getByCriteria: async (criteria: { companyId?: string; role?: string }): Promise<ReturnType<typeof normalizeAgentRow>[]> => {
+      const conditions: ReturnType<typeof eq>[] = [];
+      if (criteria.companyId) conditions.push(eq(agents.companyId, criteria.companyId));
+      if (criteria.role) conditions.push(eq(agents.role, criteria.role));
+      const rows = await db
+        .select()
+        .from(agents)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+      return rows.map(normalizeAgentRow);
+    },
   };
 }
