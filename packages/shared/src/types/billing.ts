@@ -11,6 +11,8 @@ export interface Plan {
   stripePriceIdYearly: string | null;
   sortOrder: number;
   isPublic: boolean;
+  deploymentMaxDeployableProjectsCap: number;
+  deploymentMaxDeploymentsPerRepoCap: number;
   createdAt: Date;
   updatedAt: Date;
 }

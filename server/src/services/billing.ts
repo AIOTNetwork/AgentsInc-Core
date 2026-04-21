@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { plans, userSubscriptions } from "@paperclipai/db";
+import { companyMemberships, plans, userSubscriptions } from "@paperclipai/db";
 import type { Plan, SubscriptionWithPlan, SubscriptionStatus } from "@paperclipai/shared";
 import { getFreePlan } from "./plan-seed.js";
 
@@ -91,6 +91,32 @@ export function billingService(db: Db) {
         .where(eq(userSubscriptions.stripeCustomerId, stripeCustomerId))
         .limit(1);
       return row ? { ...row.subscription, plan: row.plan } : undefined;
+    },
+
+    // Look up a company's subscription via its owner user membership. Returns
+    // null when no owner or no subscription exists; callers fall back to plan
+    // defaults. Read-only (no lazy provisioning).
+    getSubscriptionForCompany: async (companyId: string): Promise<SubscriptionWithPlan | null> => {
+      const [membership] = await db
+        .select({ userId: companyMemberships.principalId })
+        .from(companyMemberships)
+        .where(and(
+          eq(companyMemberships.companyId, companyId),
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.membershipRole, "owner"),
+          eq(companyMemberships.status, "active"),
+        ))
+        .limit(1);
+      if (!membership) return null;
+
+      const [row] = await db
+        .select({ subscription: userSubscriptions, plan: plans })
+        .from(userSubscriptions)
+        .innerJoin(plans, eq(userSubscriptions.planId, plans.id))
+        .where(eq(userSubscriptions.userId, membership.userId))
+        .limit(1);
+      if (!row) return null;
+      return { ...row.subscription, status: row.subscription.status as SubscriptionStatus, plan: row.plan };
     },
   };
 }
