@@ -16,3 +16,4 @@ export { llmRoutes } from "./llms.js";
 export { accessRoutes } from "./access.js";
 export { instanceSettingsRoutes } from "./instance-settings.js";
 export { billingRoutes } from "./billing.js";
+export { preRegisterRoutes } from "./pre-register.js";

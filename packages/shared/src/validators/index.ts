@@ -300,3 +300,10 @@ export {
   type SetPluginState,
   type ListPluginState,
 } from "./plugin.js";
+
+export {
+  createPreRegisterSchema,
+  preRegisterQuerySchema,
+  type CreatePreRegister,
+  type PreRegisterQuery,
+} from "./pre-register.js";
