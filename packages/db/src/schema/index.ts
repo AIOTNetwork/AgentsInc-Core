@@ -61,3 +61,5 @@ export { pluginLogs } from "./plugin_logs.js";
 export { githubInstallations } from "./github_installations.js";
 export { plans } from "./plans.js";
 export { userSubscriptions } from "./user_subscriptions.js";
+export { preRegisterUsers } from "./pre_register_users.js";
+export { preRegisterAgents } from "./pre_register_agents.js";

@@ -351,6 +351,13 @@
       "when": 1775405825324,
       "tag": "0049_gorgeous_triathlon",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1776847532744,
+      "tag": "0050_spotty_misty_knight",
+      "breakpoints": true
     }
   ]
 }
