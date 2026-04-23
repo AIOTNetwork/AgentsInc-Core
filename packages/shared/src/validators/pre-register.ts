@@ -9,7 +9,7 @@ const preRegisterAccountSchema = z.object({
 
 const preRegisterAgentSchema = z.object({
   agentId: z.string().min(1),
-  idea: z.string().min(1),
+  idea: z.string(),
 });
 
 export const createPreRegisterSchema = z.object({
