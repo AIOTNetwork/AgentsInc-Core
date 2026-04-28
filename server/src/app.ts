@@ -29,6 +29,7 @@ import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
 import { preRegisterRoutes } from "./routes/pre-register.js";
+import { deploymentRoutes } from "./routes/deployments.js";
 import { assertChainConfig, getBscRpcContext } from "./lib/bsc-rpc.js";
 import { accessRoutes } from "./routes/access.js";
 import { pluginRoutes } from "./routes/plugins.js";
@@ -225,6 +226,7 @@ export async function createApp(
   api.use(sidebarBadgeRoutes(db));
   api.use(instanceSettingsRoutes(db));
   api.use(preRegisterRoutes(db));
+  api.use(deploymentRoutes(db));
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = createPluginWorkerManager();
   const pluginRegistry = pluginRegistryService(db);
