@@ -1,9 +1,15 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
-import { createPreRegisterSchema, preRegisterQuerySchema } from "@paperclipai/shared";
+import {
+  createPreRegisterSchema,
+  preRegisterQuerySchema,
+  recordMintSchema,
+} from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { preRegisterService } from "../services/pre-register.js";
-import { badRequest, notFound } from "../errors.js";
+import { agentMintService } from "../services/agentMint.js";
+import { getBscRpcContext } from "../lib/bsc-rpc.js";
+import { badRequest, notFound, HttpError } from "../errors.js";
 
 type UserRow = {
   email: string | null;
@@ -12,9 +18,16 @@ type UserRow = {
   chainId: string | null;
 };
 
-type AgentRow = { agentId: string; idea: string } | null;
+type AgentRow = {
+  agentId: string;
+  idea: string;
+  tokenId: string | null;
+  mintTxHash: string | null;
+  walletAddress: string | null;
+} | null;
 
-function accountResponse(user: UserRow) {
+function accountResponse(user: UserRow | null) {
+  if (!user) return null;
   return {
     email: user.email,
     walletAddress: user.walletAddress,
@@ -25,7 +38,13 @@ function accountResponse(user: UserRow) {
 
 function agentResponse(agent: AgentRow) {
   if (!agent) return null;
-  return { agentId: agent.agentId, idea: agent.idea };
+  return {
+    agentId: agent.agentId,
+    idea: agent.idea,
+    tokenId: agent.tokenId,
+    mintTxHash: agent.mintTxHash,
+    walletAddress: agent.walletAddress,
+  };
 }
 
 type AccountInput = {
@@ -93,6 +112,10 @@ export function preRegisterRoutes(db: Db) {
       userCreated = true;
     }
 
+    if (path.kind === "wallet") {
+      await svc.claimOrphansByWallet(path.walletAddress, user.id);
+    }
+
     let agentRow = await svc.findAgentByUserId(user.id);
     if (agent) {
       agentRow = await svc.upsertAgent(user.id, agent);
@@ -123,6 +146,22 @@ export function preRegisterRoutes(db: Db) {
 
     const agentRow = await svc.findAgentByUserId(user.id);
     res.json({ account: accountResponse(user), agent: agentResponse(agentRow) });
+  });
+
+  router.post("/pre-register/mint", validate(recordMintSchema), async (req, res) => {
+    const mintSvc = agentMintService(svc, getBscRpcContext());
+    const { txHash, agentId } = req.body as { txHash: string; agentId: string };
+    const result = await mintSvc.recordMint({ txHash, agentId });
+
+    if (result.kind === "pending") {
+      res.status(202).json({ status: "pending", reason: result.reason });
+      return;
+    }
+    if (result.kind === "rpc_unavailable") {
+      throw new HttpError(503, result.reason);
+    }
+
+    res.json({ account: accountResponse(result.account), agent: agentResponse(result.agent) });
   });
 
   return router;

@@ -12,9 +12,25 @@ const mockService = vi.hoisted(() => ({
   upsertAgent: vi.fn(),
 }));
 
+const mockRecordMint = vi.hoisted(() => vi.fn());
+const mockGetBscRpcContext = vi.hoisted(() => vi.fn());
+
 vi.mock("../services/pre-register.js", () => ({
   preRegisterService: () => mockService,
 }));
+
+vi.mock("../services/agentMint.js", () => ({
+  agentMintService: () => ({ recordMint: mockRecordMint }),
+}));
+
+vi.mock("../lib/bsc-rpc.js", async () => {
+  const actual =
+    await vi.importActual<typeof import("../lib/bsc-rpc.js")>("../lib/bsc-rpc.js");
+  return {
+    ...actual,
+    getBscRpcContext: mockGetBscRpcContext,
+  };
+});
 
 function createApp() {
   const app = express();
@@ -28,9 +44,14 @@ function createApp() {
   return app;
 }
 
+const VALID_TX_HASH = `0x${"a".repeat(64)}`;
+
+const fakeRpcContext = { config: {}, client: {}, agentMintedTopic: "0x00" } as any;
+
 describe("pre-register routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetBscRpcContext.mockReturnValue(fakeRpcContext);
   });
 
   describe("POST /api/pre-register", () => {
@@ -253,6 +274,136 @@ describe("pre-register routes", () => {
     it("400 when neither param provided", async () => {
       const res = await request(createApp()).get("/api/pre-register");
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe("POST /api/pre-register/mint", () => {
+    it("returns 200 with account and agent when current owner is pre-registered", async () => {
+      mockRecordMint.mockResolvedValue({
+        kind: "ok",
+        agent: {
+          agentId: "my-agent",
+          idea: "do things",
+          tokenId: "42",
+          mintTxHash: VALID_TX_HASH,
+          walletAddress: null,
+        },
+        account: {
+          email: null,
+          walletAddress: "0xabc",
+          provider: "metamask",
+          chainId: "97",
+        },
+      });
+
+      const res = await request(createApp())
+        .post("/api/pre-register/mint")
+        .send({ txHash: VALID_TX_HASH, agentId: "my-agent" });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        account: {
+          email: null,
+          walletAddress: "0xabc",
+          provider: "metamask",
+          chainId: "97",
+        },
+        agent: {
+          agentId: "my-agent",
+          idea: "do things",
+          tokenId: "42",
+          mintTxHash: VALID_TX_HASH,
+          walletAddress: null,
+        },
+      });
+      expect(mockRecordMint).toHaveBeenCalledWith({
+        txHash: VALID_TX_HASH,
+        agentId: "my-agent",
+      });
+    });
+
+    it("returns 200 with account=null when current NFT owner is not pre-registered", async () => {
+      mockRecordMint.mockResolvedValue({
+        kind: "ok",
+        agent: {
+          agentId: "my-agent",
+          idea: "do things",
+          tokenId: "42",
+          mintTxHash: VALID_TX_HASH,
+          walletAddress: "0xdef",
+        },
+        account: null,
+      });
+
+      const res = await request(createApp())
+        .post("/api/pre-register/mint")
+        .send({ txHash: VALID_TX_HASH, agentId: "my-agent" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.account).toBeNull();
+      expect(res.body.agent.walletAddress).toBe("0xdef");
+    });
+
+    it("returns 202 pending when the transaction is not yet confirmed", async () => {
+      mockRecordMint.mockResolvedValue({
+        kind: "pending",
+        reason: "Transaction not yet confirmed",
+      });
+
+      const res = await request(createApp())
+        .post("/api/pre-register/mint")
+        .send({ txHash: VALID_TX_HASH, agentId: "my-agent" });
+
+      expect(res.status).toBe(202);
+      expect(res.body).toEqual({
+        status: "pending",
+        reason: "Transaction not yet confirmed",
+      });
+    });
+
+    it("returns 503 when the RPC is unavailable", async () => {
+      mockRecordMint.mockResolvedValue({
+        kind: "rpc_unavailable",
+        reason: "Failed to fetch transaction receipt",
+      });
+
+      const res = await request(createApp())
+        .post("/api/pre-register/mint")
+        .send({ txHash: VALID_TX_HASH, agentId: "my-agent" });
+
+      expect(res.status).toBe(503);
+    });
+
+    it("returns 503 when BSC RPC is not configured", async () => {
+      const { BscRpcNotConfiguredError } = await import("../lib/bsc-rpc.js");
+      mockGetBscRpcContext.mockImplementation(() => {
+        throw new BscRpcNotConfiguredError();
+      });
+
+      const res = await request(createApp())
+        .post("/api/pre-register/mint")
+        .send({ txHash: VALID_TX_HASH, agentId: "my-agent" });
+
+      expect(res.status).toBe(503);
+      expect(mockRecordMint).not.toHaveBeenCalled();
+    });
+
+    it("400 when txHash is not 0x + 64 hex chars", async () => {
+      const res = await request(createApp())
+        .post("/api/pre-register/mint")
+        .send({ txHash: "0x123", agentId: "my-agent" });
+
+      expect(res.status).toBe(400);
+      expect(mockRecordMint).not.toHaveBeenCalled();
+    });
+
+    it("400 when agentId is missing", async () => {
+      const res = await request(createApp())
+        .post("/api/pre-register/mint")
+        .send({ txHash: VALID_TX_HASH });
+
+      expect(res.status).toBe(400);
+      expect(mockRecordMint).not.toHaveBeenCalled();
     });
   });
 });

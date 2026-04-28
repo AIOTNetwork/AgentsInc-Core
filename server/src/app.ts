@@ -29,6 +29,7 @@ import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
 import { preRegisterRoutes } from "./routes/pre-register.js";
+import { assertChainConfig, getBscRpcContext } from "./lib/bsc-rpc.js";
 import { accessRoutes } from "./routes/access.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { adapterRoutes } from "./routes/adapters.js";
@@ -374,6 +375,8 @@ export async function createApp(
   void toolDispatcher.initialize().catch((err) => {
     logger.error({ err }, "Failed to initialize plugin tool dispatcher");
   });
+  const bscRpc = getBscRpcContext();
+  await assertChainConfig(bscRpc);
   const devWatcher = opts.uiMode === "vite-dev"
     ? createPluginDevWatcher(
       lifecycle,

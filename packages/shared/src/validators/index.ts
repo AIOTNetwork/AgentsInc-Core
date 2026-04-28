@@ -304,6 +304,8 @@ export {
 export {
   createPreRegisterSchema,
   preRegisterQuerySchema,
+  recordMintSchema,
   type CreatePreRegister,
   type PreRegisterQuery,
+  type RecordMint,
 } from "./pre-register.js";
