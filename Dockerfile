@@ -23,7 +23,8 @@ FROM base AS cli-tools
 RUN npm install --global --omit=dev \
   @anthropic-ai/claude-code@latest \
   @openai/codex@latest \
-  opencode-ai
+  opencode-ai \
+  vercel@latest
 
 # --- Install dependencies (only re-runs when package.json/lockfile change) ---
 FROM base AS deps
