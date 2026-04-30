@@ -85,6 +85,7 @@ export async function createApp(
     bindHost: string;
     authReady: boolean;
     companyDeletionEnabled: boolean;
+    heartbeatSchedulerEnabled: boolean;
     instanceId?: string;
     hostVersion?: string;
     localPluginDir?: string;
@@ -206,7 +207,7 @@ export async function createApp(
   );
   api.use("/companies", companyRoutes(db, opts.storageService));
   api.use(companySkillRoutes(db));
-  api.use(agentRoutes(db));
+  api.use(agentRoutes(db, { heartbeatSchedulerEnabled: opts.heartbeatSchedulerEnabled }));
   api.use(assetRoutes(db, opts.storageService));
   api.use(projectRoutes(db));
   api.use(issueRoutes(db, opts.storageService, {

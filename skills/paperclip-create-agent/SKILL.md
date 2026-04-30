@@ -118,7 +118,7 @@ curl -sS -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agent-h
       "cwd": "/abs/path/to/repo",
       "model": "o4-mini"
     },
-    "runtimeConfig": {"heartbeat": {"enabled": true, "intervalSec": 300, "wakeOnDemand": true}},
+    "runtimeConfig": {"heartbeat": {"intervalSec": 300, "wakeOnDemand": true}},
     "sourceIssueId": "<issue-id>"
   }'
 ```
@@ -173,6 +173,7 @@ Before sending a hire request:
 - Avoid secrets in plain text unless required by adapter behavior.
 - Ensure reporting line is correct and in-company.
 - Ensure prompt is role-specific and operationally scoped.
+- runtimeConfig.heartbeat.enabled`: body-wins; default behavior is **omit it** so the agent follows env `HEARTBEAT_SCHEDULER_ENABLED` (default `false`). Only include explicitly when this agent must override the deployment policy.
 - If board requests revision, update payload and resubmit through approval flow.
 
 For endpoint payload shapes and full examples, read:

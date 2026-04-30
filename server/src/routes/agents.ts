@@ -72,7 +72,7 @@ import {
 } from "../services/default-agent-instructions.js";
 import { getTelemetryClient } from "../telemetry.js";
 
-export function agentRoutes(db: Db) {
+export function agentRoutes(db: Db, opts: { heartbeatSchedulerEnabled: boolean } = { heartbeatSchedulerEnabled: false }) {
   const DEFAULT_INSTRUCTIONS_PATH_KEYS: Record<string, string> = {
     claude_local: "instructionsFilePath",
     codex_local: "instructionsFilePath",
@@ -1391,9 +1391,23 @@ export function agentRoutes(db: Db) {
       hireInput.adapterType,
       normalizedAdapterConfig,
     );
+    const incomingRuntimeConfig = asRecord(hireInput.runtimeConfig) ?? {};
+    const incomingHeartbeat = asRecord(incomingRuntimeConfig.heartbeat) ?? {};
+    const normalizedRuntimeConfig: Record<string, unknown> = {
+      ...incomingRuntimeConfig,
+      heartbeat: {
+        ...incomingHeartbeat,
+        // Body wins; only fill `enabled` from env-derived config when omitted.
+        enabled:
+          incomingHeartbeat.enabled !== undefined
+            ? incomingHeartbeat.enabled
+            : opts.heartbeatSchedulerEnabled,
+      },
+    };
     const normalizedHireInput = {
       ...hireInput,
       adapterConfig: normalizedAdapterConfig,
+      runtimeConfig: normalizedRuntimeConfig,
     };
 
     const company = await db
