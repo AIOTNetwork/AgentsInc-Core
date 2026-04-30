@@ -20,6 +20,7 @@ import { CopyText } from "../components/CopyText";
 import { InlineEditor } from "../components/InlineEditor";
 import { StatusBadge } from "../components/StatusBadge";
 import { BudgetPolicyCard } from "../components/BudgetPolicyCard";
+import { DeploymentsPanel } from "../components/DeploymentsPanel";
 import { ExecutionWorkspaceCloseDialog } from "../components/ExecutionWorkspaceCloseDialog";
 import { IssuesList } from "../components/IssuesList";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -61,10 +62,12 @@ function resolveProjectTab(pathname: string, projectId: string): ProjectTab | nu
 
 function OverviewContent({
   project,
+  companyId,
   onUpdate,
   imageUploadHandler,
 }: {
-  project: { description: string | null; status: string; targetDate: string | null };
+  project: { id: string; description: string | null; status: string; targetDate: string | null };
+  companyId: string | null;
   onUpdate: (data: Record<string, unknown>) => void;
   imageUploadHandler?: (file: File) => Promise<string>;
 }) {
@@ -94,6 +97,18 @@ function OverviewContent({
           </div>
         )}
       </div>
+
+      {companyId && (
+        <section aria-labelledby="deployments-heading" className="space-y-3">
+          <h2
+            id="deployments-heading"
+            className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground"
+          >
+            Deployments
+          </h2>
+          <DeploymentsPanel companyId={companyId} projectId={project.id} />
+        </section>
+      )}
     </div>
   );
 }
@@ -869,6 +884,7 @@ export function ProjectDetail() {
       {activeTab === "overview" && (
         <OverviewContent
           project={project}
+          companyId={resolvedCompanyId}
           onUpdate={(data) => updateProject.mutate(data)}
           imageUploadHandler={async (file) => {
             const asset = await uploadImage.mutateAsync(file);
