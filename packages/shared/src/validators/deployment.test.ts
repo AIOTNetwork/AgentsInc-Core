@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  deploymentManifestTargetSchema,
   deploymentsPatchSchema,
   deploymentResultSchema,
   deploymentSettingsUpdateSchema,
@@ -49,5 +50,35 @@ describe("deploymentSettingsUpdateSchema", () => {
 
   it("rejects negative values", () => {
     expect(deploymentSettingsUpdateSchema.safeParse({ maxDeployableProjects: -1 }).success).toBe(false);
+  });
+});
+
+describe("deploymentManifestTargetSchema", () => {
+  it("accepts entry with displayName", () => {
+    expect(
+      deploymentManifestTargetSchema.safeParse({
+        name: "web",
+        displayName: "Frontend (Vite)",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts entry without displayName (legacy manifest)", () => {
+    expect(deploymentManifestTargetSchema.safeParse({ name: "web" }).success).toBe(true);
+  });
+
+  it("rejects empty displayName", () => {
+    expect(
+      deploymentManifestTargetSchema.safeParse({ name: "web", displayName: "" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects displayName over 200 chars", () => {
+    expect(
+      deploymentManifestTargetSchema.safeParse({
+        name: "web",
+        displayName: "x".repeat(201),
+      }).success,
+    ).toBe(false);
   });
 });

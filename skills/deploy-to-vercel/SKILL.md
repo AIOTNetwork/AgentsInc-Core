@@ -56,6 +56,45 @@ If any precondition fails, surface a clear typed error via the result POST so th
 
 ---
 
+## Maintaining `deploy-targets.json`
+
+Applies to both flows above and to direct user runs below. The project workspace repo holds a manifest at its root: `deploy-targets.json`. It declares what is deployable from this repo. The Paperclip Deployments panel reads this file to populate its target dropdown and to flag orphaned deployments. **Keep it up to date as part of normal development**, alongside the code that introduced or removed the deployable.
+
+### Field roles — read this before editing
+
+- **`name`** — the **permanent identifier**. Treat it like a database primary key. Once an entry is written with a given `name`, that entry's `name` must never change. The Paperclip deployment row is keyed on `name` (called `targetName` in API responses), and the Vercel project slug is built from it. Renaming `name` would orphan the existing deployment and create a fresh one. If a deployable's role changes, update `displayName` instead. If a deployable is genuinely replaced, retire the old entry (remove from manifest, ask the user to Stop) and add a new entry with a fresh `name`. Required. Lowercase letters, digits, and hyphens; 1–40 chars; must start with a letter or digit. Regex `^[a-z0-9][a-z0-9-]{0,39}$`.
+- **`displayName`** — the **mutable display label**, shown to users in the panel dropdown and table. Update this whenever the deployable's purpose evolves. Must be **unique across all targets in this manifest** (case-sensitive). Before writing or updating a `displayName`, scan the other entries — if your intended value collides, pick a different value (e.g., add a qualifier like `Admin (Legacy)`). The server does not enforce this rule; it relies on you to keep the manifest clean. Optional; falls back to `name` for display when omitted. 1–200 chars.
+- **`framework`** — optional, advisory. Renders a hint in the panel; does not affect deploy behavior.
+- **`dependsOn`** — optional. Array of target `name` values (not `displayName`). Renders dependency hints in the panel; does not change deploy ordering.
+
+### When to update the manifest
+
+- **Introduce a new deployable.** Append an entry to `targets[]` whenever you scaffold or extract something deployable to Vercel (frontend, API, admin panel, docs, landing page, worker). Pick a short stable slug for `name` — prefer something readable like `web` or `api-v2` over a uuid, since `name` becomes part of the Vercel project URL (`${env}-${companySlug}-${projectSlug}-${name}-${hash}`).
+- **Update the display label.** Change `displayName` whenever the deployable's role evolves. Leave `name` untouched.
+- **Remove a deployable.** Delete the entry. The Paperclip server will not tear down the live deployment automatically — its row will show as **orphaned** until a user clicks Stop.
+
+### Shape
+
+```json
+{
+  "targets": [
+    { "name": "web",   "displayName": "Frontend (Vite)",     "framework": "vite" },
+    { "name": "api",   "displayName": "API server",          "framework": "node" },
+    { "name": "admin", "displayName": "Admin panel (Next)",  "framework": "next", "dependsOn": ["api"] }
+  ]
+}
+```
+
+### Commit it
+
+The orchestrator reads `deploy-targets.json` from the workspace's local checkout, which it keeps in sync with the remote. **Commit and push the manifest change in the same task that introduced or removed the deployable.** Uncommitted local edits will not reach a freshly synced orchestrator host.
+
+### Missing or empty manifest
+
+Not an error. The server treats a missing or malformed manifest as `{ targets: [] }` and the Deployments panel shows no targets to deploy. Populate it whenever the project has anything to deploy.
+
+---
+
 # Direct user runs (manual deploys)
 
 Everything below applies when a human asked you to deploy directly — not when the orchestrator dispatched you. Goal: get the user into the best long-term setup (project linked to Vercel with git-push deploys). Default to **preview** unless the user explicitly asks for production.

@@ -10,7 +10,13 @@ import {
 } from "@paperclipai/shared";
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { deploymentsApi } from "../api/deployments";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "./StatusBadge";
@@ -30,6 +36,10 @@ const REDEPLOY_STATUSES: ReadonlySet<DeploymentStatus> = new Set([
 ]);
 
 const STOP_STATUSES: ReadonlySet<DeploymentStatus> = new Set(DEPLOYMENT_IDLE_STATUSES);
+
+function targetLabel(t: Pick<DeploymentManifestTarget, "name" | "displayName">): string {
+  return t.displayName ?? t.name;
+}
 
 function formatLastSynced(value: Deployment["lastSyncedAt"]): string {
   if (!value) return "—";
@@ -83,8 +93,7 @@ export function DeploymentsPanel({
     onSuccess: invalidate,
   });
 
-  const [newTarget, setNewTarget] = useState("");
-  const trimmedNewTarget = newTarget.trim();
+  const [selectedTargetName, setSelectedTargetName] = useState<string>("");
 
   if (query.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading deployments…</p>;
@@ -99,13 +108,13 @@ export function DeploymentsPanel({
   if (!query.data) return null;
 
   const { deployments, manifestTargets, quota } = query.data;
-  const manifestNames = new Set(manifestTargets.map((t) => t.name));
+  const manifestByName = new Map(manifestTargets.map((t) => [t.name, t]));
   const deployedTargetNames = new Set(deployments.map((d) => d.targetName));
   const undeployedManifestTargets = manifestTargets.filter(
     (t) => !deployedTargetNames.has(t.name),
   );
 
-  const isOrphan = (d: Deployment) => !manifestNames.has(d.targetName);
+  const isOrphan = (d: Deployment) => !manifestByName.has(d.targetName);
 
   return (
     <div className="space-y-4">
@@ -153,12 +162,17 @@ export function DeploymentsPanel({
                 const orphan = isOrphan(d);
                 const canStop = STOP_STATUSES.has(d.status);
                 const canRedeploy = REDEPLOY_STATUSES.has(d.status);
+                const manifestEntry = manifestByName.get(d.targetName);
+                const label = manifestEntry ? targetLabel(manifestEntry) : d.targetName;
                 return (
                   <tr key={d.id} className={cn(orphan && "opacity-70")}>
-                    <td className="px-3 py-2 font-mono text-xs">
-                      {d.targetName}
+                    <td className="px-3 py-2 text-xs">
+                      <div className="font-medium">{label}</div>
+                      <div className="font-mono text-[10px] text-muted-foreground">
+                        {d.targetName}
+                      </div>
                       {orphan && (
-                        <span className="ml-1 text-[10px] uppercase tracking-wider text-amber-300">
+                        <span className="mt-0.5 inline-block text-[10px] uppercase tracking-wider text-amber-300">
                           orphaned
                         </span>
                       )}
@@ -221,41 +235,42 @@ export function DeploymentsPanel({
         <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
           Deploy a target
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            value={newTarget}
-            onChange={(e) => setNewTarget(e.target.value)}
-            placeholder="target name (e.g. web)"
-            className="max-w-xs"
-          />
-          <Button
-            size="sm"
-            onClick={() => {
-              if (!trimmedNewTarget) return;
-              deployMutation.mutate(trimmedNewTarget);
-              setNewTarget("");
-            }}
-            disabled={!trimmedNewTarget || deployMutation.isPending}
-          >
-            Deploy
-          </Button>
-          {undeployedManifestTargets.length > 0 && (
-            <>
-              <span className="text-xs text-muted-foreground">or from manifest:</span>
-              {undeployedManifestTargets.map((t: DeploymentManifestTarget) => (
-                <Button
-                  key={t.name}
-                  size="sm"
-                  variant="outline"
-                  onClick={() => deployMutation.mutate(t.name)}
-                  disabled={deployMutation.isPending}
-                >
-                  + {t.name}
-                </Button>
-              ))}
-            </>
-          )}
-        </div>
+        {undeployedManifestTargets.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {manifestTargets.length === 0
+              ? "No manifest entries. Ask the company's CEO agent to register deployables in deploy-targets.json."
+              : "All manifest targets already have a deployment row."}
+          </p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={selectedTargetName} onValueChange={setSelectedTargetName}>
+              <SelectTrigger size="sm" className="min-w-[14rem]">
+                <SelectValue placeholder="Pick a target…" />
+              </SelectTrigger>
+              <SelectContent>
+                {undeployedManifestTargets.map((t: DeploymentManifestTarget) => (
+                  <SelectItem key={t.name} value={t.name}>
+                    <span>{targetLabel(t)}</span>
+                    <span className="ml-2 font-mono text-[10px] text-muted-foreground">
+                      {t.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              onClick={() => {
+                if (!selectedTargetName) return;
+                deployMutation.mutate(selectedTargetName);
+                setSelectedTargetName("");
+              }}
+              disabled={!selectedTargetName || deployMutation.isPending}
+            >
+              Deploy
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

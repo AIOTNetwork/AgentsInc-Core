@@ -88,6 +88,7 @@ export type Deployment = z.infer<typeof deploymentSchema>;
 
 export const deploymentManifestTargetSchema = z.object({
   name: deploymentTargetNameSchema,
+  displayName: z.string().min(1).max(200).optional(),
   framework: z.string().optional(),
   dependsOn: z.array(deploymentTargetNameSchema).optional(),
 });
