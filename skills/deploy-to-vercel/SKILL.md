@@ -33,7 +33,22 @@ you are being driven by the Paperclip orchestrator. In that flow:
        `${DEPLOY_ENVIRONMENT}-${companySlug}-${projectSlug}-${targetName}-${hash}`
        (where `hash` is the first 8 hex chars of `sha1(companyId:projectId)`).
        Run `vercel link --repo --scope <team>` (reuse or create the project),
-       then `vercel deploy [--prod if type=production]` with the meta tags below.
+       then run `vercel deploy` with an **explicit** `--target` flag matching
+       the requested type:
+       - `type=preview`  → `vercel deploy --target=preview`
+       - `type=production` → `vercel deploy --prod` (equivalent to `--target=production`)
+
+       The explicit `--target=preview` is required: on a freshly created Vercel
+       project with no existing production deployment, plain `vercel deploy`
+       will auto-promote the first deployment to production, which causes the
+       Paperclip DB row (typed `preview`) to disagree with what is live on
+       Vercel. Always pass `--target` so the agent's decision is the source of
+       truth.
+
+       Preview and production for the same `targetName` share **one** Vercel
+       project (one `vercel link --repo` call covers both). They are tracked
+       in Paperclip as two separate deployment rows but resolve to the same
+       `vercelProjectId`.
      - **teardown**: `vercel remove <vercelDeploymentId>`. Already-gone = success.
      - **reconcile**: `vercel inspect <vercelDeploymentId>` (or `vercel ls`).
    - POST the final result: `{kind: "<kind>", success, url?, vercelProjectId?, vercelDeploymentId?, error?}`.

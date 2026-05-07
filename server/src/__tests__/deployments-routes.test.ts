@@ -151,14 +151,22 @@ describe("PATCH /companies/:c/projects/:p/deployments", () => {
   it("returns 409 invalid_state", async () => {
     mockDeploymentsService.applyPatch.mockRejectedValue(
       new DeploymentServiceError("invalid_state", {
-        conflicts: [{ targetName: "web", currentStatus: "deploying" }],
+        conflicts: [{ targetName: "web", type: "preview", currentStatus: "deploying" }],
       }),
     );
     const res = await request(createApp(BOARD_ACTOR))
       .patch("/api/companies/c1/projects/p1/deployments")
-      .send({ action: "stop", targets: [{ targetName: "web" }] });
+      .send({ action: "stop", targets: [{ targetName: "web", type: "preview" }] });
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("invalid_state");
+  });
+
+  it("rejects stop body that omits type (validator)", async () => {
+    const res = await request(createApp(BOARD_ACTOR))
+      .patch("/api/companies/c1/projects/p1/deployments")
+      .send({ action: "stop", targets: [{ targetName: "web" }] });
+    expect(res.status).toBe(400);
+    expect(mockDeploymentsService.applyPatch).not.toHaveBeenCalled();
   });
 });
 

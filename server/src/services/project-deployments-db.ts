@@ -1,7 +1,7 @@
 import { and, countDistinct, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { projectDeployments } from "@paperclipai/db";
-import { DEPLOYMENT_ACTIVE_STATUSES, DeploymentStatus } from "@paperclipai/shared";
+import { DEPLOYMENT_ACTIVE_STATUSES, DeploymentStatus, type DeploymentType } from "@paperclipai/shared";
 
 export type ProjectDeploymentRow = typeof projectDeployments.$inferSelect;
 export type ProjectDeploymentInsert = typeof projectDeployments.$inferInsert;
@@ -12,6 +12,7 @@ export interface ProjectDeploymentCriteria {
   projectId?: string;
   targetName?: string;
   targetNames?: string[];
+  type?: DeploymentType;
   statuses?: string[];
   activeOnly?: boolean;
   forUpdate?: boolean;
@@ -32,6 +33,7 @@ export function projectDeploymentsDbService(db: Db) {
     if (criteria.targetNames && criteria.targetNames.length > 0) {
       conditions.push(inArray(projectDeployments.targetName, criteria.targetNames));
     }
+    if (criteria.type) conditions.push(eq(projectDeployments.type, criteria.type));
     if (criteria.activeOnly) {
       conditions.push(inArray(projectDeployments.status, ACTIVE));
     } else if (criteria.statuses && criteria.statuses.length > 0) {

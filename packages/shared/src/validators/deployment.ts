@@ -34,10 +34,9 @@ export const deploymentsPatchSchema = z
     (data) => {
       if (data.action === DeploymentAction.REFRESH) return !data.targets;
       if (!data.targets || data.targets.length === 0) return false;
-      if (data.action === DeploymentAction.DEPLOY) {
-        return data.targets.every((t) => typeof t.type === "string");
-      }
-      return true; // STOP: targetName only; type not required
+      // DEPLOY and STOP both require type so (targetName, type) uniquely
+      // identifies the row to act on.
+      return data.targets.every((t) => typeof t.type === "string");
     },
     { message: "invalid body shape for action" },
   );

@@ -50,11 +50,64 @@ describeEmbeddedPostgres("deploymentsService.applyPatch", () => {
     expect(wakeup).toHaveBeenCalledTimes(1);
   });
 
+  it("preview and production for the same target coexist as separate rows", async () => {
+    const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+    await svc.applyPatch({
+      companyId, projectId, userId: "u1",
+      body: {
+        action: DeploymentAction.DEPLOY,
+        targets: [{ targetName: "web", type: DeploymentType.PREVIEW }],
+      },
+    });
+    await svc.applyPatch({
+      companyId, projectId, userId: "u1",
+      body: {
+        action: DeploymentAction.DEPLOY,
+        targets: [{ targetName: "web", type: DeploymentType.PRODUCTION }],
+      },
+    });
+    const rows = await db.select().from(projectDeployments);
+    expect(rows).toHaveLength(2);
+    const types = rows.map((r) => r.type).sort();
+    expect(types).toEqual([DeploymentType.PREVIEW, DeploymentType.PRODUCTION].sort());
+  });
+
+  it("redeploying preview does not collapse onto an existing production row", async () => {
+    const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+    // Seed both rows in DEPLOYED so DEPLOY hits the update branch.
+    await db.insert(projectDeployments).values([
+      {
+        companyId, projectId, targetName: "web",
+        type: DeploymentType.PREVIEW, status: DeploymentStatus.DEPLOYED,
+      },
+      {
+        companyId, projectId, targetName: "web",
+        type: DeploymentType.PRODUCTION, status: DeploymentStatus.DEPLOYED,
+      },
+    ]);
+    await svc.applyPatch({
+      companyId, projectId, userId: "u1",
+      body: {
+        action: DeploymentAction.DEPLOY,
+        targets: [{ targetName: "web", type: DeploymentType.PREVIEW }],
+      },
+    });
+    const rows = await db.select().from(projectDeployments);
+    expect(rows).toHaveLength(2);
+    const preview = rows.find((r) => r.type === DeploymentType.PREVIEW);
+    const production = rows.find((r) => r.type === DeploymentType.PRODUCTION);
+    expect(preview!.status).toBe(DeploymentStatus.PENDING);
+    expect(production!.status).toBe(DeploymentStatus.DEPLOYED);
+  });
+
   it("rejects stop when target row is missing", async () => {
     const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
     await expect(svc.applyPatch({
       companyId, projectId, userId: "u1",
-      body: { action: DeploymentAction.STOP, targets: [{ targetName: "missing" }] },
+      body: {
+        action: DeploymentAction.STOP,
+        targets: [{ targetName: "missing", type: DeploymentType.PREVIEW }],
+      },
     })).rejects.toBeInstanceOf(DeploymentServiceError);
   });
 
@@ -66,7 +119,10 @@ describeEmbeddedPostgres("deploymentsService.applyPatch", () => {
     const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
     await expect(svc.applyPatch({
       companyId, projectId, userId: "u1",
-      body: { action: DeploymentAction.STOP, targets: [{ targetName: "web" }] },
+      body: {
+        action: DeploymentAction.STOP,
+        targets: [{ targetName: "web", type: DeploymentType.PREVIEW }],
+      },
     })).rejects.toMatchObject({ code: "invalid_state" });
   });
 
@@ -95,7 +151,10 @@ describeEmbeddedPostgres("deploymentsService.applyPatch", () => {
       const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
       await svc.applyPatch({
         companyId, projectId, userId: "u1",
-        body: { action: DeploymentAction.STOP, targets: [{ targetName: "web" }] },
+        body: {
+          action: DeploymentAction.STOP,
+          targets: [{ targetName: "web", type: DeploymentType.PREVIEW }],
+        },
       });
       expect(wakeup).toHaveBeenCalledWith(
         expect.any(String),

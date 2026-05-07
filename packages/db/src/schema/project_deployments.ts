@@ -35,8 +35,8 @@ export const projectDeployments = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    projectTargetUniqueIdx: uniqueIndex("project_deployments_project_target_idx")
-      .on(table.projectId, table.targetName),
+    projectTargetTypeUniqueIdx: uniqueIndex("project_deployments_project_target_type_idx")
+      .on(table.projectId, table.targetName, table.type),
     companyStatusIdx: index("project_deployments_company_status_idx").on(table.companyId, table.status),
     projectStatusIdx: index("project_deployments_project_status_idx").on(table.projectId, table.status),
     statusUpdatedIdx: index("project_deployments_status_updated_idx").on(table.status, table.updatedAt),

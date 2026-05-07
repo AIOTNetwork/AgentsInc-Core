@@ -151,7 +151,23 @@ function findButton(container: HTMLElement, label: string): HTMLButtonElement | 
 }
 
 function getTargetSelect(container: HTMLElement): HTMLSelectElement | null {
+  // The first Select in the deploy area is the target picker; the second is
+  // the preview/production type picker.
   return container.querySelector<HTMLSelectElement>('[data-testid="target-select"]');
+}
+
+function getTypeSelect(container: HTMLElement): HTMLSelectElement | null {
+  const all = container.querySelectorAll<HTMLSelectElement>('[data-testid="target-select"]');
+  return all[1] ?? null;
+}
+
+function setSelectValue(select: HTMLSelectElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLSelectElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(select, value);
+  select.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 describe("DeploymentsPanel", () => {
@@ -305,14 +321,7 @@ describe("DeploymentsPanel", () => {
     expect(select).toBeTruthy();
     expect(select!.options.length).toBe(3); // placeholder + 2 manifest entries
 
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLSelectElement.prototype,
-        "value",
-      )?.set;
-      setter?.call(select, "api");
-      select!.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await act(async () => setSelectValue(select!, "api"));
 
     const deployButton = findButton(container, "Deploy");
     expect(deployButton).toBeTruthy();
@@ -326,6 +335,105 @@ describe("DeploymentsPanel", () => {
     expect(mockDeploymentsApi.patch).toHaveBeenCalledWith("c1", "p1", {
       action: DeploymentAction.DEPLOY,
       targets: [{ targetName: "api", type: DeploymentType.PREVIEW }],
+    });
+
+    await act(async () => root.unmount());
+    queryClient.clear();
+  });
+
+  it("dispatches deploy with type=production when the type toggle is set to Production", async () => {
+    mockDeploymentsApi.list.mockResolvedValue(
+      createListResponse({
+        deployments: [],
+        manifestTargets: [{ name: "web" }],
+      }),
+    );
+    mockDeploymentsApi.patch.mockResolvedValue({ deployments: [] });
+    const { root, queryClient } = await mountPanel(container);
+
+    await act(async () => setSelectValue(getTargetSelect(container)!, "web"));
+    await act(async () => setSelectValue(getTypeSelect(container)!, DeploymentType.PRODUCTION));
+
+    await act(async () => {
+      findButton(container, "Deploy")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    await flush();
+
+    expect(mockDeploymentsApi.patch).toHaveBeenCalledWith("c1", "p1", {
+      action: DeploymentAction.DEPLOY,
+      targets: [{ targetName: "web", type: DeploymentType.PRODUCTION }],
+    });
+
+    await act(async () => root.unmount());
+    queryClient.clear();
+  });
+
+  it("disables Deploy when the (target,type) combo is already running", async () => {
+    mockDeploymentsApi.list.mockResolvedValue(
+      createListResponse({
+        deployments: [
+          createDeployment({
+            targetName: "web",
+            type: DeploymentType.PREVIEW,
+            status: DeploymentStatus.DEPLOYED,
+          }),
+        ],
+        manifestTargets: [{ name: "web" }],
+      }),
+    );
+    const { root, queryClient } = await mountPanel(container);
+
+    // Default type=preview, target=web → already deployed → Deploy disabled.
+    await act(async () => setSelectValue(getTargetSelect(container)!, "web"));
+    expect(findButton(container, "Deploy")!.disabled).toBe(true);
+
+    // Flip to production → Deploy is enabled (production row does not exist).
+    await act(async () => setSelectValue(getTypeSelect(container)!, DeploymentType.PRODUCTION));
+    expect(findButton(container, "Deploy")!.disabled).toBe(false);
+
+    await act(async () => root.unmount());
+    queryClient.clear();
+  });
+
+  it("Stop and Redeploy buttons send the row's type", async () => {
+    mockDeploymentsApi.list.mockResolvedValue(
+      createListResponse({
+        deployments: [
+          createDeployment({
+            id: "d1",
+            targetName: "web",
+            type: DeploymentType.PRODUCTION,
+            status: DeploymentStatus.DEPLOY_FAILED,
+          }),
+        ],
+        manifestTargets: [{ name: "web" }],
+      }),
+    );
+    mockDeploymentsApi.patch.mockResolvedValue({ deployments: [] });
+    const { root, queryClient } = await mountPanel(container);
+
+    await act(async () => {
+      findButton(container, "Redeploy")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    await flush();
+    expect(mockDeploymentsApi.patch).toHaveBeenLastCalledWith("c1", "p1", {
+      action: DeploymentAction.DEPLOY,
+      targets: [{ targetName: "web", type: DeploymentType.PRODUCTION }],
+    });
+
+    await act(async () => {
+      findButton(container, "Stop")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    await flush();
+    expect(mockDeploymentsApi.patch).toHaveBeenLastCalledWith("c1", "p1", {
+      action: DeploymentAction.STOP,
+      targets: [{ targetName: "web", type: DeploymentType.PRODUCTION }],
     });
 
     await act(async () => root.unmount());
@@ -355,10 +463,13 @@ describe("DeploymentsPanel", () => {
     queryClient.clear();
   });
 
-  it("lists only undeployed manifest targets in the dropdown", async () => {
+  it("lists every manifest target in the dropdown — including ones already deployed for some type", async () => {
     mockDeploymentsApi.list.mockResolvedValue(
       createListResponse({
-        deployments: [createDeployment({ targetName: "web" })],
+        deployments: [
+          // `web` has a preview row, but the production slot is still open.
+          createDeployment({ targetName: "web", type: DeploymentType.PREVIEW }),
+        ],
         manifestTargets: [
           { name: "web", displayName: "Frontend" },
           { name: "api", displayName: "API server" },
@@ -371,9 +482,9 @@ describe("DeploymentsPanel", () => {
     const select = getTargetSelect(container);
     expect(select).toBeTruthy();
     const optionValues = Array.from(select!.options).map((o) => o.value);
+    expect(optionValues).toContain("web");
     expect(optionValues).toContain("api");
     expect(optionValues).toContain("worker");
-    expect(optionValues).not.toContain("web"); // already deployed
 
     await act(async () => root.unmount());
     queryClient.clear();

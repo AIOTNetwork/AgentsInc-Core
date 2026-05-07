@@ -8,6 +8,7 @@ import {
   type Deployment,
   type DeploymentsPatchBody,
   type DeploymentResultBody,
+  type DeploymentType,
 } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
 import { agentService } from "./agents.js";
@@ -65,7 +66,11 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
           payload: {
             kind: DeploymentWakeupKind.RECONCILE,
             companyId, projectId,
-            deployments: rows.map(r => ({ deploymentId: r.id, targetName: r.targetName })),
+            deployments: rows.map(r => ({
+              deploymentId: r.id,
+              targetName: r.targetName,
+              type: r.type,
+            })),
             resultEndpoint: `/companies/${companyId}/projects/${projectId}/deployments/:id/result`,
           },
           requestedByActorType: "user" as const,
@@ -101,21 +106,30 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
         { projectId, targetNames, forUpdate: true },
         txDb,
       );
-      const existingByName = new Map(existingRows.map(r => [r.targetName, r]));
+      const keyOf = (targetName: string, type: string) => `${targetName}|${type}`;
+      const existingByKey = new Map(
+        existingRows.map(r => [keyOf(r.targetName, r.type), r]),
+      );
 
-      const conflicts: Array<{ targetName: string; currentStatus: DeploymentStatus }> = [];
+      const conflicts: Array<{
+        targetName: string;
+        type: DeploymentType;
+        currentStatus: DeploymentStatus;
+      }> = [];
       for (const t of body.targets!) {
-        const row = existingByName.get(t.targetName);
+        const row = existingByKey.get(keyOf(t.targetName, t.type!));
         const status = row?.status as DeploymentStatus | undefined;
         if (body.action === DeploymentAction.DEPLOY) {
           if (row && status !== DeploymentStatus.STOPPED &&
             !DEPLOYMENT_IDLE_STATUSES.includes(status!)) {
-            conflicts.push({ targetName: t.targetName, currentStatus: status! });
+            conflicts.push({ targetName: t.targetName, type: t.type!, currentStatus: status! });
           }
         } else {
-          if (!row) throw new DeploymentServiceError("not_found", { targetName: t.targetName });
+          if (!row) throw new DeploymentServiceError("not_found", {
+            targetName: t.targetName, type: t.type,
+          });
           if (!DEPLOYMENT_IDLE_STATUSES.includes(status!)) {
-            conflicts.push({ targetName: t.targetName, currentStatus: status! });
+            conflicts.push({ targetName: t.targetName, type: t.type!, currentStatus: status! });
           }
         }
       }
@@ -126,7 +140,7 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
 
       if (body.action === DeploymentAction.DEPLOY) {
         for (const t of body.targets!) {
-          const existing = existingByName.get(t.targetName);
+          const existing = existingByKey.get(keyOf(t.targetName, t.type!));
           if (!existing) {
             out.push(await deploymentsDb.insert(txDb, {
               companyId, projectId, targetName: t.targetName,
@@ -135,14 +149,14 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
             }));
           } else {
             out.push(await deploymentsDb.updateById(txDb, existing.id, {
-              status: DeploymentStatus.PENDING, type: t.type!, lastError: null,
+              status: DeploymentStatus.PENDING, lastError: null,
               requestedByUserId: userId, updatedAt: now,
             }));
           }
         }
       } else {
         for (const t of body.targets!) {
-          const existing = existingByName.get(t.targetName)!;
+          const existing = existingByKey.get(keyOf(t.targetName, t.type!))!;
           out.push(await deploymentsDb.updateById(txDb, existing.id, {
             status: DeploymentStatus.STOPPING, lastError: null,
             requestedByUserId: userId, updatedAt: now,

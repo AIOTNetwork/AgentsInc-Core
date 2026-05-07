@@ -1,0 +1,2 @@
+DROP INDEX "project_deployments_project_target_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "project_deployments_project_target_type_idx" ON "project_deployments" USING btree ("project_id","target_name","type");

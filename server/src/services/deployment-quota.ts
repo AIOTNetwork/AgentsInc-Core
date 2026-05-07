@@ -75,9 +75,10 @@ export function deploymentQuotaService(db: Db) {
     const limits = await loadLimits(companyId);
     const repoRows = await deploymentsDb.getByCriteria({ projectId, activeOnly: true });
     const projectCount = await deploymentsDb.countActiveProjectsInCompany(companyId);
+    const repoUsed = new Set(repoRows.map((r) => r.targetName)).size;
     return {
       project: { used: projectCount, limit: limits.projectLimit, planCap: limits.projectLimit },
-      repo: { used: repoRows.length, limit: limits.repoLimit, planCap: limits.repoLimit },
+      repo: { used: repoUsed, limit: limits.repoLimit, planCap: limits.repoLimit },
     };
   }
 

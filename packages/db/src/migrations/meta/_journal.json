@@ -379,6 +379,13 @@
       "when": 1778115600000,
       "tag": "0053_swift_silver_surfer",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1778151420966,
+      "tag": "0054_naive_puppet_master",
+      "breakpoints": true
     }
   ]
 }

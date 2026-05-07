@@ -93,19 +93,19 @@ export function DeploymentsPanel({
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
   const deployMutation = useMutation({
-    mutationFn: (targetName: string) =>
+    mutationFn: (input: { targetName: string; type: DeploymentType }) =>
       deploymentsApi.patch(companyId, projectId, {
         action: DeploymentAction.DEPLOY,
-        targets: [{ targetName, type: DeploymentType.PREVIEW }],
+        targets: [{ targetName: input.targetName, type: input.type }],
       }),
     onSuccess: invalidate,
   });
 
   const stopMutation = useMutation({
-    mutationFn: (targetName: string) =>
+    mutationFn: (input: { targetName: string; type: DeploymentType }) =>
       deploymentsApi.patch(companyId, projectId, {
         action: DeploymentAction.STOP,
-        targets: [{ targetName }],
+        targets: [{ targetName: input.targetName, type: input.type }],
       }),
     onSuccess: invalidate,
   });
@@ -138,6 +138,7 @@ export function DeploymentsPanel({
   });
 
   const [selectedTargetName, setSelectedTargetName] = useState<string>("");
+  const [selectedType, setSelectedType] = useState<DeploymentType>(DeploymentType.PREVIEW);
 
   if (query.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading deployments…</p>;
@@ -153,10 +154,16 @@ export function DeploymentsPanel({
 
   const { deployments, manifestTargets, quota } = query.data;
   const manifestByName = new Map(manifestTargets.map((t) => [t.name, t]));
-  const deployedTargetNames = new Set(deployments.map((d) => d.targetName));
-  const undeployedManifestTargets = manifestTargets.filter(
-    (t) => !deployedTargetNames.has(t.name),
+  // A (target, type) is occupied if a deployment row for it exists in any
+  // non-stopped/failed state — Deploy is disabled then. Stopped/failed rows
+  // are reachable via the row-level Redeploy button.
+  const occupiedKeys = new Set(
+    deployments
+      .filter((d) => !STOP_STATUSES.has(d.status))
+      .map((d) => `${d.targetName}|${d.type}`),
   );
+  const selectedKey = selectedTargetName ? `${selectedTargetName}|${selectedType}` : "";
+  const selectionOccupied = !!selectedKey && occupiedKeys.has(selectedKey);
 
   const isOrphan = (d: Deployment) => !manifestByName.has(d.targetName);
 
@@ -298,7 +305,10 @@ export function DeploymentsPanel({
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => stopMutation.mutate(d.targetName)}
+                              onClick={() => stopMutation.mutate({
+                                targetName: d.targetName,
+                                type: d.type,
+                              })}
                               disabled={stopMutation.isPending}
                             >
                               Stop
@@ -308,7 +318,10 @@ export function DeploymentsPanel({
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => deployMutation.mutate(d.targetName)}
+                              onClick={() => deployMutation.mutate({
+                                targetName: d.targetName,
+                                type: d.type,
+                              })}
                               disabled={deployMutation.isPending}
                             >
                               Redeploy
@@ -328,11 +341,9 @@ export function DeploymentsPanel({
           <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             Deploy a target
           </div>
-          {undeployedManifestTargets.length === 0 ? (
+          {manifestTargets.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              {manifestTargets.length === 0
-                ? "No manifest entries. Ask the company's CEO agent to register deployables in deploy-targets.json."
-                : "All manifest targets already have a deployment row."}
+              No manifest entries. Ask the company's CEO agent to register deployables in deploy-targets.json.
             </p>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
@@ -341,7 +352,7 @@ export function DeploymentsPanel({
                   <SelectValue placeholder="Pick a target…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {undeployedManifestTargets.map((t: DeploymentManifestTarget) => (
+                  {manifestTargets.map((t: DeploymentManifestTarget) => (
                     <SelectItem key={t.name} value={t.name}>
                       <span>{targetLabel(t)}</span>
                       <span className="ml-2 font-mono text-[10px] text-muted-foreground">
@@ -351,17 +362,46 @@ export function DeploymentsPanel({
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                size="sm"
-                onClick={() => {
-                  if (!selectedTargetName) return;
-                  deployMutation.mutate(selectedTargetName);
-                  setSelectedTargetName("");
-                }}
-                disabled={!selectedTargetName || deployMutation.isPending}
+              <Select
+                value={selectedType}
+                onValueChange={(v) => setSelectedType(v as DeploymentType)}
               >
-                Deploy
-              </Button>
+                <SelectTrigger size="sm" className="min-w-[8rem]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={DeploymentType.PREVIEW}>Preview</SelectItem>
+                  <SelectItem value={DeploymentType.PRODUCTION}>Production</SelectItem>
+                </SelectContent>
+              </Select>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (!selectedTargetName || selectionOccupied) return;
+                        deployMutation.mutate({
+                          targetName: selectedTargetName,
+                          type: selectedType,
+                        });
+                        setSelectedTargetName("");
+                      }}
+                      disabled={
+                        !selectedTargetName || selectionOccupied || deployMutation.isPending
+                      }
+                    >
+                      Deploy
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {selectionOccupied && (
+                  <TooltipContent>
+                    A {selectedType} deployment for this target is already running. Stop it
+                    first or use the Redeploy button on the row.
+                  </TooltipContent>
+                )}
+              </Tooltip>
             </div>
           )}
         </div>
