@@ -54,3 +54,8 @@ export {
   redactTranscriptEntryPaths,
 } from "./log-redaction.js";
 export { inferOpenAiCompatibleBiller } from "./billing.js";
+export type {
+  PaperclipWakeDeploymentKind,
+  PaperclipWakeDeploymentPayload,
+  PaperclipWakeDeploymentTarget,
+} from "./server-utils.js";

@@ -211,6 +211,9 @@ type PaperclipWakeComment = {
   authorId: string | null;
 };
 
+// Shape for comment-wake payloads (issue comments, @-mentions). Other wake
+// kinds (e.g. deployment wakes) use their own payload types — see
+// PaperclipWakeDeploymentPayload below.
 type PaperclipWakePayload = {
   reason: string | null;
   issue: PaperclipWakeIssue | null;
@@ -222,6 +225,19 @@ type PaperclipWakePayload = {
   missingCount: number;
   truncated: boolean;
   fallbackFetchNeeded: boolean;
+};
+
+export type PaperclipWakeDeploymentTarget = {
+  deploymentId: string;
+  targetName: string;
+};
+
+export type PaperclipWakeDeploymentKind = "deploy" | "teardown" | "reconcile";
+
+export type PaperclipWakeDeploymentPayload = {
+  kind: PaperclipWakeDeploymentKind;
+  deployments: PaperclipWakeDeploymentTarget[];
+  resultEndpoint: string;
 };
 
 function normalizePaperclipWakeIssue(value: unknown): PaperclipWakeIssue | null {
@@ -287,10 +303,45 @@ export function normalizePaperclipWakePayload(value: unknown): PaperclipWakePayl
   };
 }
 
+const DEPLOYMENT_WAKE_KINDS: ReadonlySet<PaperclipWakeDeploymentKind> = new Set([
+  "deploy",
+  "teardown",
+  "reconcile",
+]);
+
+export function normalizePaperclipWakeDeploymentPayload(
+  value: unknown,
+): PaperclipWakeDeploymentPayload | null {
+  const payload = parseObject(value);
+  const kindRaw = asString(payload.kind, "").trim();
+  if (!DEPLOYMENT_WAKE_KINDS.has(kindRaw as PaperclipWakeDeploymentKind)) return null;
+  const resultEndpoint = asString(payload.resultEndpoint, "").trim();
+  if (!resultEndpoint) return null;
+  const deployments = Array.isArray(payload.deployments)
+    ? payload.deployments
+        .map((entry): PaperclipWakeDeploymentTarget | null => {
+          const obj = parseObject(entry);
+          const deploymentId = asString(obj.deploymentId, "").trim();
+          const targetName = asString(obj.targetName, "").trim();
+          if (!deploymentId || !targetName) return null;
+          return { deploymentId, targetName };
+        })
+        .filter((entry): entry is PaperclipWakeDeploymentTarget => Boolean(entry))
+    : [];
+  if (deployments.length === 0) return null;
+  return {
+    kind: kindRaw as PaperclipWakeDeploymentKind,
+    deployments,
+    resultEndpoint,
+  };
+}
+
 export function stringifyPaperclipWakePayload(value: unknown): string | null {
-  const normalized = normalizePaperclipWakePayload(value);
-  if (!normalized) return null;
-  return JSON.stringify(normalized);
+  const commentPayload = normalizePaperclipWakePayload(value);
+  if (commentPayload) return JSON.stringify(commentPayload);
+  const deploymentPayload = normalizePaperclipWakeDeploymentPayload(value);
+  if (deploymentPayload) return JSON.stringify(deploymentPayload);
+  return null;
 }
 
 export function renderPaperclipWakePrompt(

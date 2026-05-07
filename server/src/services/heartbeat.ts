@@ -69,6 +69,7 @@ import {
   resolveSessionCompactionPolicy,
   type SessionCompactionPolicy,
 } from "@paperclipai/adapter-utils";
+import { normalizePaperclipWakeDeploymentPayload } from "@paperclipai/adapter-utils/server-utils";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
@@ -335,6 +336,11 @@ interface WakeupOptions {
   requestedByActorType?: "user" | "agent" | "system";
   requestedByActorId?: string | null;
   contextSnapshot?: Record<string, unknown>;
+  // Skip same-scope coalescing in the non-issue path so this wake always creates
+  // a fresh queued run. Used by callers (e.g. deployments) whose payload carries
+  // the action intent — coalescing only merges contextSnapshot, not payload, so
+  // a coalesced wake silently drops payload.kind / payload.deployments.
+  bypassCoalesce?: boolean;
 }
 
 type UsageTotals = {
@@ -818,6 +824,15 @@ function enrichWakeContextSnapshot(input: {
   } else if (!readNonEmptyString(contextSnapshot["wakeCommentId"]) && wakeCommentId) {
     contextSnapshot.wakeCommentId = wakeCommentId;
   }
+  // Deployment-wake extraction: when the incoming payload is a deployment wake
+  // (kind=deploy|teardown|reconcile), pull just the structured fields the agent
+  // needs at heartbeat time and stash them on contextSnapshot. Mirrors the
+  // comment-ids normalization above; the full raw payload is not persisted.
+  const wakeDeployment = normalizePaperclipWakeDeploymentPayload(payload);
+  if (wakeDeployment) {
+    contextSnapshot.wakeDeployment = wakeDeployment;
+    delete contextSnapshot[PAPERCLIP_WAKE_PAYLOAD_KEY];
+  }
   if (!readNonEmptyString(contextSnapshot["wakeSource"]) && source) {
     contextSnapshot.wakeSource = source;
   }
@@ -856,7 +871,7 @@ export function mergeCoalescedContextSnapshot(
   return merged;
 }
 
-async function buildPaperclipWakePayload(input: {
+async function buildPaperclipWakeCommentPayload(input: {
   db: Db;
   companyId: string;
   contextSnapshot: Record<string, unknown>;
@@ -973,6 +988,30 @@ async function buildPaperclipWakePayload(input: {
     truncated,
     fallbackFetchNeeded: truncated || missingCommentCount > 0,
   };
+}
+
+// Dispatcher: returns the structured wake payload for whichever wake kind the
+// contextSnapshot describes. Comment wakes go through the async comment
+// builder above (which fetches comment bodies). Deployment wakes fall through
+// to the shared normalizer that re-validates the struct extracted earlier by
+// enrichWakeContextSnapshot.
+async function buildPaperclipWakePayload(input: {
+  db: Db;
+  companyId: string;
+  contextSnapshot: Record<string, unknown>;
+  issueSummary?:
+    | {
+        id: string;
+        identifier: string | null;
+        title: string;
+        status: string;
+        priority: string;
+      }
+    | null;
+}) {
+  const commentPayload = await buildPaperclipWakeCommentPayload(input);
+  if (commentPayload) return commentPayload;
+  return normalizePaperclipWakeDeploymentPayload(input.contextSnapshot.wakeDeployment);
 }
 
 function runTaskKey(run: typeof heartbeatRuns.$inferSelect) {
@@ -4099,9 +4138,10 @@ export function heartbeatService(db: Db) {
     const shouldQueueFollowupForCommentWake =
       Boolean(wakeCommentId) && Boolean(sameScopeRunningRun) && !sameScopeQueuedRun;
 
-    const coalescedTargetRun =
-      sameScopeQueuedRun ??
-      (shouldQueueFollowupForCommentWake ? null : sameScopeRunningRun ?? null);
+    const coalescedTargetRun = opts.bypassCoalesce
+      ? null
+      : sameScopeQueuedRun ??
+        (shouldQueueFollowupForCommentWake ? null : sameScopeRunningRun ?? null);
 
     if (coalescedTargetRun) {
       const mergedContextSnapshot = mergeCoalescedContextSnapshot(
