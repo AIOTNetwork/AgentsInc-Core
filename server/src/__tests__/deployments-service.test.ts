@@ -4,7 +4,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
-import { DeploymentAction, DeploymentStatus, DeploymentType } from "@paperclipai/shared";
+import { DeploymentAction, DeploymentResultKind, DeploymentStatus, DeploymentType } from "@paperclipai/shared";
 import { deploymentsService, DeploymentServiceError } from "../services/deployments.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
@@ -70,6 +70,56 @@ describeEmbeddedPostgres("deploymentsService.applyPatch", () => {
     })).rejects.toMatchObject({ code: "invalid_state" });
   });
 
+  describe("bypassCoalesce on heartbeat wakes", () => {
+    // Deployment wakes carry no taskKey/issueId, so the heartbeat coalescer
+    // groups them under the same null scope and silently merges new deploy
+    // wakes into any in-flight CEO run (e.g. an earlier teardown), losing
+    // payload.kind and payload.deployments. We tell heartbeat to skip coalescing.
+    it("deploy passes bypassCoalesce: true", async () => {
+      const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+      await svc.applyPatch({
+        companyId, projectId, userId: "u1",
+        body: { action: DeploymentAction.DEPLOY, targets: [{ targetName: "web", type: DeploymentType.PREVIEW }] },
+      });
+      expect(wakeup).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ bypassCoalesce: true }),
+      );
+    });
+
+    it("stop passes bypassCoalesce: true", async () => {
+      await db.insert(projectDeployments).values({
+        companyId, projectId, targetName: "web",
+        type: DeploymentType.PREVIEW, status: DeploymentStatus.DEPLOYED,
+      });
+      const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+      await svc.applyPatch({
+        companyId, projectId, userId: "u1",
+        body: { action: DeploymentAction.STOP, targets: [{ targetName: "web" }] },
+      });
+      expect(wakeup).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ bypassCoalesce: true }),
+      );
+    });
+
+    it("refresh passes bypassCoalesce: true", async () => {
+      await db.insert(projectDeployments).values({
+        companyId, projectId, targetName: "web",
+        type: DeploymentType.PREVIEW, status: DeploymentStatus.DEPLOYED,
+      });
+      const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+      await svc.applyPatch({
+        companyId, projectId, userId: "u1",
+        body: { action: DeploymentAction.REFRESH },
+      });
+      expect(wakeup).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ bypassCoalesce: true }),
+      );
+    });
+  });
+
   describe("sweepStuck", () => {
     it("flips DEPLOYING → DEPLOY_FAILED after the timeout window", async () => {
       await db.insert(projectDeployments).values({
@@ -108,6 +158,100 @@ describeEmbeddedPostgres("deploymentsService.applyPatch", () => {
       expect(res.swept).toBe(0);
       const [row] = await db.select().from(projectDeployments);
       expect(row!.status).toBe(DeploymentStatus.DEPLOYING);
+    });
+
+    it("flips PENDING → DEPLOY_FAILED after the timeout window", async () => {
+      await db.insert(projectDeployments).values({
+        companyId, projectId, targetName: "web",
+        type: DeploymentType.PREVIEW, status: DeploymentStatus.PENDING,
+        updatedAt: new Date(Date.now() - 16 * 60 * 1000),
+      });
+      const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+      const res = await svc.sweepStuck({ now: new Date() });
+      expect(res.swept).toBe(1);
+      const [row] = await db.select().from(projectDeployments);
+      expect(row!.status).toBe(DeploymentStatus.DEPLOY_FAILED);
+      expect(row!.lastError).toMatch(/timed out/i);
+    });
+
+    it("scopes by projectId so other projects' stuck rows are not swept", async () => {
+      const [otherProject] = await db
+        .insert(projects)
+        .values({ companyId, name: "other" })
+        .returning();
+      await db.insert(projectDeployments).values([
+        {
+          companyId, projectId, targetName: "web",
+          type: DeploymentType.PREVIEW, status: DeploymentStatus.PENDING,
+          updatedAt: new Date(Date.now() - 16 * 60 * 1000),
+        },
+        {
+          companyId, projectId: otherProject!.id, targetName: "web",
+          type: DeploymentType.PREVIEW, status: DeploymentStatus.PENDING,
+          updatedAt: new Date(Date.now() - 16 * 60 * 1000),
+        },
+      ]);
+      const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+      const res = await svc.sweepStuck({ now: new Date(), projectId });
+      expect(res.swept).toBe(1);
+      const otherRow = await db
+        .select()
+        .from(projectDeployments)
+        .then((rows) => rows.find((r) => r.projectId === otherProject!.id));
+      expect(otherRow!.status).toBe(DeploymentStatus.PENDING);
+    });
+  });
+
+  describe("applyResult lastDeployedAt", () => {
+    it("sets lastDeployedAt when a deploy succeeds", async () => {
+      const [row] = await db.insert(projectDeployments).values({
+        companyId, projectId, targetName: "web",
+        type: DeploymentType.PREVIEW, status: DeploymentStatus.DEPLOYING,
+      }).returning();
+      const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+      const before = Date.now();
+      await svc.applyResult({
+        companyId, projectId, deploymentId: row!.id,
+        body: { kind: DeploymentResultKind.DEPLOY, success: true, url: "https://x.vercel.app" },
+      });
+      const [updated] = await db.select().from(projectDeployments);
+      expect(updated!.status).toBe(DeploymentStatus.DEPLOYED);
+      expect(updated!.lastDeployedAt).toBeTruthy();
+      expect(updated!.lastDeployedAt!.getTime()).toBeGreaterThanOrEqual(before);
+    });
+
+    it("does NOT update lastDeployedAt on a failed deploy", async () => {
+      const [row] = await db.insert(projectDeployments).values({
+        companyId, projectId, targetName: "web",
+        type: DeploymentType.PREVIEW, status: DeploymentStatus.DEPLOYING,
+      }).returning();
+      const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+      await svc.applyResult({
+        companyId, projectId, deploymentId: row!.id,
+        body: { kind: DeploymentResultKind.DEPLOY, success: false, error: "boom" },
+      });
+      const [updated] = await db.select().from(projectDeployments);
+      expect(updated!.status).toBe(DeploymentStatus.DEPLOY_FAILED);
+      expect(updated!.lastDeployedAt).toBeNull();
+    });
+
+    it("retains a previous lastDeployedAt across a new pending state", async () => {
+      const previous = new Date("2026-04-01T00:00:00.000Z");
+      const [row] = await db.insert(projectDeployments).values({
+        companyId, projectId, targetName: "web",
+        type: DeploymentType.PREVIEW, status: DeploymentStatus.DEPLOYED,
+        lastDeployedAt: previous,
+      }).returning();
+      const svc = deploymentsService(db, { heartbeatWakeup: wakeup });
+      // User clicks Redeploy → applyPatch flips status back to PENDING.
+      await svc.applyPatch({
+        companyId, projectId, userId: "u1",
+        body: { action: DeploymentAction.DEPLOY, targets: [{ targetName: "web", type: DeploymentType.PREVIEW }] },
+      });
+      const [afterRedeploy] = await db.select().from(projectDeployments);
+      expect(afterRedeploy!.status).toBe(DeploymentStatus.PENDING);
+      expect(afterRedeploy!.lastDeployedAt!.getTime()).toBe(previous.getTime());
+      void row;
     });
   });
 });

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deploymentRoutes } from "../routes/deployments.js";
 import { errorHandler } from "../middleware/index.js";
 import { DeploymentServiceError } from "../services/deployments.js";
+import { resetSweepLockForTests } from "../services/deployment-sweep-lock.js";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────
 
@@ -13,6 +14,10 @@ const mockDeploymentsService = vi.hoisted(() => ({
   list: vi.fn(),
   sweepStuck: vi.fn(),
 }));
+
+beforeEach(() => {
+  resetSweepLockForTests();
+});
 
 const mockQuotaService = vi.hoisted(() => ({
   snapshot: vi.fn(),
@@ -302,5 +307,40 @@ describe("PATCH /companies/:c/deployment-settings", () => {
       .send({ maxDeployableProjects: 1 });
     expect(res.status).toBe(403);
     expect(mockCompanyService.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /companies/:c/projects/:p/deployments/sweep", () => {
+  it("returns 200 + swept count on first call", async () => {
+    mockProjectService.getById.mockResolvedValue({ id: "p1", companyId: "c1" });
+    mockDeploymentsService.sweepStuck.mockResolvedValue({ swept: 2, sweptIds: ["d1", "d2"] });
+    const res = await request(createApp(BOARD_ACTOR))
+      .post("/api/companies/c1/projects/p1/deployments/sweep")
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ swept: 2, sweptIds: ["d1", "d2"] });
+    expect(mockDeploymentsService.sweepStuck).toHaveBeenCalledWith({ projectId: "p1" });
+  });
+
+  it("returns 429 sweep_throttled on a rapid second call within the lock window", async () => {
+    mockProjectService.getById.mockResolvedValue({ id: "p1", companyId: "c1" });
+    mockDeploymentsService.sweepStuck.mockResolvedValue({ swept: 0, sweptIds: [] });
+    const app = createApp(BOARD_ACTOR);
+    const first = await request(app).post("/api/companies/c1/projects/p1/deployments/sweep").send({});
+    expect(first.status).toBe(200);
+    const second = await request(app).post("/api/companies/c1/projects/p1/deployments/sweep").send({});
+    expect(second.status).toBe(429);
+    expect(second.body.error).toBe("sweep_throttled");
+    expect(typeof second.body.retryAfterSeconds).toBe("number");
+    expect(mockDeploymentsService.sweepStuck).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 404 when the project does not belong to the company", async () => {
+    mockProjectService.getById.mockResolvedValue({ id: "p1", companyId: "other" });
+    const res = await request(createApp(BOARD_ACTOR))
+      .post("/api/companies/c1/projects/p1/deployments/sweep")
+      .send({});
+    expect(res.status).toBe(404);
+    expect(mockDeploymentsService.sweepStuck).not.toHaveBeenCalled();
   });
 });

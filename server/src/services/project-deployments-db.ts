@@ -77,18 +77,27 @@ export function projectDeploymentsDbService(db: Db) {
   async function sweepStuck(
     now: Date,
     timeoutMs: number,
+    scope: { projectId?: string } = {},
   ): Promise<{ sweptIds: string[] }> {
     const threshold = new Date(now.getTime() - timeoutMs);
+    const conditions = [
+      inArray(projectDeployments.status, [
+        DeploymentStatus.PENDING,
+        DeploymentStatus.DEPLOYING,
+        DeploymentStatus.STOPPING,
+      ]),
+      lt(projectDeployments.updatedAt, threshold),
+    ];
+    if (scope.projectId) {
+      conditions.push(eq(projectDeployments.projectId, scope.projectId));
+    }
     const rows = await db.update(projectDeployments).set({
-      status: sql`CASE WHEN ${projectDeployments.status} = ${DeploymentStatus.DEPLOYING}
+      status: sql`CASE WHEN ${projectDeployments.status} IN (${DeploymentStatus.PENDING}, ${DeploymentStatus.DEPLOYING})
                        THEN ${DeploymentStatus.DEPLOY_FAILED}
                        ELSE ${DeploymentStatus.STOP_FAILED} END`,
       lastError: `timed out after ${Math.round(timeoutMs / 60000)} min with no agent report`,
       updatedAt: now,
-    }).where(and(
-      inArray(projectDeployments.status, [DeploymentStatus.DEPLOYING, DeploymentStatus.STOPPING]),
-      lt(projectDeployments.updatedAt, threshold),
-    )).returning({ id: projectDeployments.id });
+    }).where(and(...conditions)).returning({ id: projectDeployments.id });
     return { sweptIds: rows.map(r => r.id) };
   }
 

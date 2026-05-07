@@ -17,6 +17,10 @@ import {
 } from "../services/index.js";
 import { deploymentQuotaService } from "../services/deployment-quota.js";
 import { readDeploymentManifest } from "../services/deployment-manifest.js";
+import {
+  DEFAULT_MANUAL_SWEEP_MIN_INTERVAL_MS,
+  tryAcquireSweepLock,
+} from "../services/deployment-sweep-lock.js";
 import { forbidden, notFound } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -108,6 +112,42 @@ export function deploymentRoutes(db: Db) {
         };
         res.status(statusMap[err.code] ?? 500).json({ error: err.code, ...err.details });
       }
+    },
+  );
+
+  router.post(
+    "/companies/:companyId/projects/:projectId/deployments/sweep",
+    async (req, res) => {
+      const { companyId, projectId } = req.params as { companyId: string; projectId: string };
+      assertCompanyAccess(req, companyId);
+      const project = await projects.getById(projectId);
+      if (!project || project.companyId !== companyId) throw notFound("Project not found");
+
+      const lock = tryAcquireSweepLock(projectId);
+      if (!lock.acquired) {
+        res.setHeader("Retry-After", String(lock.retryAfterSeconds));
+        res.status(429).json({
+          error: "sweep_throttled",
+          retryAfterSeconds: lock.retryAfterSeconds,
+          minIntervalSeconds: Math.round(DEFAULT_MANUAL_SWEEP_MIN_INTERVAL_MS / 1000),
+        });
+        return;
+      }
+
+      const { swept, sweptIds } = await svc.sweepStuck({ projectId });
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "deployment.sweep_requested",
+        entityType: "project",
+        entityId: projectId,
+        details: { swept, sweptIds },
+      });
+      res.json({ swept, sweptIds });
     },
   );
 

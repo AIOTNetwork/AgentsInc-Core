@@ -80,6 +80,7 @@ export const deploymentSchema = z.object({
   vercelDeploymentId: z.string().nullable(),
   lastError: z.string().nullable(),
   lastSyncedAt: z.coerce.date().nullable(),
+  lastDeployedAt: z.coerce.date().nullable(),
   requestedByUserId: z.string().nullable(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),

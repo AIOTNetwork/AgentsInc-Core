@@ -58,7 +58,7 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
         companyId, projectId, activeOnly: true,
       });
       if (rows.length > 0) {
-        await deps.heartbeatWakeup(ceo.id, {
+        const heartbeatPayload = {
           source: "on_demand" as const,
           triggerDetail: "system" as const,
           reason: `${DeploymentWakeupKind.RECONCILE} ${rows.length} target(s)`,
@@ -74,7 +74,12 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
             projectId, action: DeploymentAction.REFRESH,
             targetNames: rows.map(r => r.targetName),
           },
-        });
+          bypassCoalesce: true,
+        }
+        const result = await deps.heartbeatWakeup(ceo.id, heartbeatPayload);
+        if (!result) {
+          logger.warn({ heartbeatPayload }, "no heartbeatWakeup");
+        }
       }
       return { deployments: rows.map(toDeployment) };
     }
@@ -153,7 +158,7 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
       };
     });
 
-    await deps.heartbeatWakeup(ceo.id, {
+    const heartbeatPayload = {
       source: "on_demand" as const,
       triggerDetail: "system" as const,
       reason: `${kind} ${results.length} target(s)`,
@@ -173,7 +178,12 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
         projectId, action: body.action,
         targetNames: results.map(r => r.targetName),
       },
-    });
+      bypassCoalesce: true,
+    }
+    const result = await deps.heartbeatWakeup(ceo.id, heartbeatPayload);
+    if (!result) {
+      logger.warn({ heartbeatPayload }, "no heartbeatWakeup");
+    }
 
     return { deployments: results.map(toDeployment) };
   }
@@ -205,6 +215,7 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
           patch.vercelDeploymentId = body.vercelDeploymentId ?? row.vercelDeploymentId;
           patch.url = body.url ?? row.url;
           patch.lastError = null;
+          patch.lastDeployedAt = now;
         } else {
           patch.status = DeploymentStatus.DEPLOY_FAILED;
           patch.lastError = body.error ?? "unknown error";
@@ -244,14 +255,16 @@ export function deploymentsService(db: Db, deps: DeploymentsServiceDeps) {
    * tick; safe to call manually for tests. Uses the scoped `deploymentsDb`.
    */
   async function sweepStuck(
-    opts: { now?: Date; timeoutMs?: number } = {},
+    opts: { now?: Date; timeoutMs?: number; projectId?: string } = {},
   ): Promise<{ swept: number; sweptIds: string[] }> {
     const now = opts.now ?? new Date();
     const timeoutMs = opts.timeoutMs ?? SWEEP_DEFAULT_TIMEOUT_MS;
-    const { sweptIds } = await deploymentsDb.sweepStuck(now, timeoutMs);
+    const { sweptIds } = await deploymentsDb.sweepStuck(now, timeoutMs, {
+      projectId: opts.projectId,
+    });
     if (sweptIds.length > 0) {
       logger.warn(
-        { count: sweptIds.length, ids: sweptIds },
+        { count: sweptIds.length, ids: sweptIds, projectId: opts.projectId },
         "deployment timeout sweep flipped stuck rows",
       );
     }
@@ -274,6 +287,7 @@ function toDeployment(row: ProjectDeploymentRow): Deployment {
     vercelDeploymentId: row.vercelDeploymentId,
     lastError: row.lastError,
     lastSyncedAt: row.lastSyncedAt,
+    lastDeployedAt: row.lastDeployedAt,
     requestedByUserId: row.requestedByUserId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

@@ -17,6 +17,7 @@ import { DeploymentsPanel } from "./DeploymentsPanel";
 const mockDeploymentsApi = vi.hoisted(() => ({
   list: vi.fn(),
   patch: vi.fn(),
+  sweep: vi.fn(),
   getSettings: vi.fn(),
   patchSettings: vi.fn(),
 }));
@@ -66,6 +67,15 @@ vi.mock("./StatusBadge", () => ({
   StatusBadge: ({ status }: { status: string }) => <span data-testid="status">{status}</span>,
 }));
 
+vi.mock("@/components/ui/tooltip", () => ({
+  TooltipProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  TooltipTrigger: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  TooltipContent: ({ children }: { children?: ReactNode }) => (
+    <span data-slot="tooltip-content">{children}</span>
+  ),
+}));
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -89,6 +99,7 @@ function createDeployment(overrides: Partial<Deployment> = {}): Deployment {
     vercelDeploymentId: null,
     lastError: null,
     lastSyncedAt: null,
+    lastDeployedAt: null,
     requestedByUserId: null,
     createdAt: new Date("2026-04-30T00:00:00.000Z"),
     updatedAt: new Date("2026-04-30T00:00:00.000Z"),
@@ -376,6 +387,122 @@ describe("DeploymentsPanel", () => {
 
     expect(getTargetSelect(container)).toBeNull();
     expect(container.textContent ?? "").toContain("deploy-targets.json");
+
+    await act(async () => root.unmount());
+    queryClient.clear();
+  });
+
+  it("renders lastDeployedAt as exact local time, falling back to '—' when null", async () => {
+    mockDeploymentsApi.list.mockResolvedValue(
+      createListResponse({
+        deployments: [
+          createDeployment({
+            id: "d1",
+            targetName: "web",
+            lastDeployedAt: new Date("2026-05-06T07:30:45.000Z"),
+          }),
+          createDeployment({
+            id: "d2",
+            targetName: "api",
+            lastDeployedAt: null,
+          }),
+        ],
+        manifestTargets: [{ name: "web" }, { name: "api" }],
+      }),
+    );
+    const { root, queryClient } = await mountPanel(container);
+
+    const text = container.textContent ?? "";
+    // Format: YYYY-MM-DD HH:mm:ss in local time. The exact local hour depends
+    // on the runner's timezone, so we just assert the date/regex shape rather
+    // than a specific clock value.
+    expect(text).toMatch(/2026-05-0[5-7] \d{2}:\d{2}:\d{2}/);
+    // The null-value row should still render "—" somewhere.
+    expect(text).toContain("—");
+
+    await act(async () => root.unmount());
+    queryClient.clear();
+  });
+
+  it("shows lastError under the status badge on deploy_failed rows", async () => {
+    mockDeploymentsApi.list.mockResolvedValue(
+      createListResponse({
+        deployments: [
+          createDeployment({
+            status: DeploymentStatus.DEPLOY_FAILED,
+            lastError: "vercel_token_not_configured",
+          }),
+        ],
+        manifestTargets: [{ name: "web" }],
+      }),
+    );
+    const { root, queryClient } = await mountPanel(container);
+
+    expect(container.textContent ?? "").toContain("vercel_token_not_configured");
+
+    await act(async () => root.unmount());
+    queryClient.clear();
+  });
+
+  it("hides lastError on non-failed rows", async () => {
+    mockDeploymentsApi.list.mockResolvedValue(
+      createListResponse({
+        deployments: [
+          createDeployment({
+            status: DeploymentStatus.DEPLOYED,
+            lastError: "stale error from previous failure",
+          }),
+        ],
+        manifestTargets: [{ name: "web" }],
+      }),
+    );
+    const { root, queryClient } = await mountPanel(container);
+
+    expect(container.textContent ?? "").not.toContain("stale error from previous failure");
+
+    await act(async () => root.unmount());
+    queryClient.clear();
+  });
+
+  it("calls api.sweep when 'Sweep stuck' is clicked and surfaces the result count", async () => {
+    mockDeploymentsApi.list.mockResolvedValue(
+      createListResponse({ deployments: [], manifestTargets: [] }),
+    );
+    mockDeploymentsApi.sweep.mockResolvedValue({ swept: 2, sweptIds: ["a", "b"] });
+    const { root, queryClient } = await mountPanel(container);
+
+    const sweepButton = findButton(container, "Sweep stuck");
+    expect(sweepButton).toBeTruthy();
+
+    await act(async () => {
+      sweepButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+
+    expect(mockDeploymentsApi.sweep).toHaveBeenCalledWith("c1", "p1");
+    expect(container.textContent ?? "").toMatch(/2 stuck deployments/);
+
+    await act(async () => root.unmount());
+    queryClient.clear();
+  });
+
+  it("surfaces a retry message when sweep returns 429", async () => {
+    mockDeploymentsApi.list.mockResolvedValue(
+      createListResponse({ deployments: [], manifestTargets: [] }),
+    );
+    const { ApiError } = await import("../api/client");
+    mockDeploymentsApi.sweep.mockRejectedValue(
+      new ApiError("sweep_throttled", 429, { error: "sweep_throttled", retryAfterSeconds: 17 }),
+    );
+    const { root, queryClient } = await mountPanel(container);
+
+    const sweepButton = findButton(container, "Sweep stuck");
+    await act(async () => {
+      sweepButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+
+    expect(container.textContent ?? "").toMatch(/Try again in 17 seconds/);
 
     await act(async () => root.unmount());
     queryClient.clear();

@@ -26,6 +26,7 @@ export const projectDeployments = pgTable(
     url: text("url"),
 
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastDeployedAt: timestamp("last_deployed_at", { withTimezone: true }),
     lastError: text("last_error"),
     lastCeoRunId: text("last_ceo_run_id"),
     requestedByUserId: text("requested_by_user_id"),
