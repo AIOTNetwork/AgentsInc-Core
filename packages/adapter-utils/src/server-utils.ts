@@ -230,6 +230,11 @@ type PaperclipWakePayload = {
 export type PaperclipWakeDeploymentTarget = {
   deploymentId: string;
   targetName: string;
+  // Present on `deploy` and `reconcile` wakes; omitted for `teardown`.
+  type?: "preview" | "production";
+  // Stored Vercel project id from the deployment row, when known.
+  // Null on the first deploy for a (project, target, type) — agent must create.
+  vercelProjectId?: string | null;
 };
 
 export type PaperclipWakeDeploymentKind = "deploy" | "teardown" | "reconcile";
@@ -309,6 +314,12 @@ const DEPLOYMENT_WAKE_KINDS: ReadonlySet<PaperclipWakeDeploymentKind> = new Set(
   "reconcile",
 ]);
 
+type PaperclipWakeDeploymentType = NonNullable<PaperclipWakeDeploymentTarget["type"]>;
+const DEPLOYMENT_WAKE_TYPES: ReadonlySet<PaperclipWakeDeploymentType> = new Set([
+  "preview",
+  "production",
+]);
+
 export function normalizePaperclipWakeDeploymentPayload(
   value: unknown,
 ): PaperclipWakeDeploymentPayload | null {
@@ -324,7 +335,18 @@ export function normalizePaperclipWakeDeploymentPayload(
           const deploymentId = asString(obj.deploymentId, "").trim();
           const targetName = asString(obj.targetName, "").trim();
           if (!deploymentId || !targetName) return null;
-          return { deploymentId, targetName };
+          const result: PaperclipWakeDeploymentTarget = { deploymentId, targetName };
+          const typeRaw = asString(obj.type, "").trim();
+          if (DEPLOYMENT_WAKE_TYPES.has(typeRaw as PaperclipWakeDeploymentType)) {
+            result.type = typeRaw as PaperclipWakeDeploymentType;
+          }
+          const vercelProjectIdRaw = asString(obj.vercelProjectId, "").trim();
+          if (vercelProjectIdRaw) {
+            result.vercelProjectId = vercelProjectIdRaw;
+          } else if (obj.vercelProjectId === null) {
+            result.vercelProjectId = null;
+          }
+          return result;
         })
         .filter((entry): entry is PaperclipWakeDeploymentTarget => Boolean(entry))
     : [];

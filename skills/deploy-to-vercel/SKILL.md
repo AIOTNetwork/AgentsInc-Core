@@ -3,7 +3,7 @@ name: deploy-to-vercel
 description: Deploy applications and websites to Vercel. Two paths — orchestrator-dispatched (Paperclip wakes the CEO with a typed payload) and direct user runs ("deploy my app", "push this live", "create a preview deployment").
 metadata:
   author: vercel
-  version: "3.0.0"
+  version: "3.1.0"
 ---
 
 # Deploy to Vercel
@@ -29,12 +29,32 @@ you are being driven by the Paperclip orchestrator. In that flow:
 2. For each entry in `payload.deployments`, in order:
    - POST `{kind: "<kind>_started"}` to the `resultEndpoint` for that `deploymentId`.
    - Perform the Vercel work:
-     - **deploy**: compute the Vercel project name as
-       `${DEPLOY_ENVIRONMENT}-${companySlug}-${projectSlug}-${targetName}-${hash}`
-       (where `hash` is the first 8 hex chars of `sha1(companyId:projectId)`).
-       Run `vercel link --repo --scope <team>` (reuse or create the project),
-       then run `vercel deploy` with an **explicit** `--target` flag matching
-       the requested type:
+     - **deploy**: resolve which Vercel project to deploy to in this priority order
+       (stop at the first hit):
+
+       1. **Stored id from the wake.** If the wake entry has `vercelProjectId`
+          set (non-null), use it directly. Skip `vercel link` entirely; either
+          write `.vercel/project.json` with `{projectId, orgId}` and run
+          `vercel deploy`, or call the Vercel REST API
+          (`POST /v13/deployments`) with `project: <vercelProjectId>`. This is
+          the steady-state path and is rename-proof.
+       2. **Meta-search fallback.** If `vercelProjectId` is null, query
+          `GET https://api.vercel.com/v6/deployments?teamId=<id>&meta-companyId=<uuid>&meta-projectId=<uuid>&meta-targetName=<name>&meta-deploymentType=<preview|production>&limit=1`.
+          If a deployment comes back, take its `projectId` field as the Vercel
+          project id, deploy against it, and POST the recovered id back via
+          `{kind: "deploy", success: true, vercelProjectId, ...}` so future
+          wakes hit step 1.
+       3. **Deterministic name (genuine first deploy).** Only when both above
+          are empty: compute the Vercel project name as
+          `${DEPLOY_ENVIRONMENT}-${companySlug}-${projectSlug}-${targetName}-${hash}`
+          (where `hash` is the first 8 hex chars of `sha1(companyId:projectId)`).
+          Run `vercel link --repo --scope <team>` to reuse or create the
+          project. Note: this path is sensitive to company/project renames —
+          once step 1 has a value, renames stop mattering.
+
+       Then run `vercel deploy` with an **explicit** `--target` flag matching
+       `payload.deployments[].type` (the wake carries this; never let Vercel
+       infer):
        - `type=preview`  → `vercel deploy --target=preview`
        - `type=production` → `vercel deploy --prod` (equivalent to `--target=production`)
 
@@ -46,13 +66,15 @@ you are being driven by the Paperclip orchestrator. In that flow:
        truth.
 
        Preview and production for the same `targetName` share **one** Vercel
-       project (one `vercel link --repo` call covers both). They are tracked
-       in Paperclip as two separate deployment rows but resolve to the same
-       `vercelProjectId`.
+       project. They are tracked in Paperclip as two separate deployment rows
+       but resolve to the same `vercelProjectId`.
      - **teardown**: `vercel remove <vercelDeploymentId>`. Already-gone = success.
      - **reconcile**: `vercel inspect <vercelDeploymentId>` (or `vercel ls`).
    - POST the final result: `{kind: "<kind>", success, url?, vercelProjectId?, vercelDeploymentId?, error?}`.
-3. Every deployment gets Vercel meta stamped via `--meta`:
+3. Every deployment gets Vercel meta stamped via `--meta`. These keys mirror the
+   deployment row's unique constraint (`projectId, targetName, type`) plus
+   tenant isolation, so the meta-search fallback in step 2.2 can recover the
+   Vercel project id from any prior deployment without consulting our DB:
    - `companyId=<uuid>`
    - `projectId=<uuid>`
    - `targetName=<name>`
